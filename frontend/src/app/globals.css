@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,6 +8,9 @@
   --foreground-rgb: 237, 237, 237;
   --background-start-rgb: 5, 5, 8;
   --background-end-rgb: 5, 5, 8;
+  --font-inter: 'Inter', sans-serif;
+  --font-jetbrains-mono: 'JetBrains Mono', monospace;
+  --font-space-grotesk: 'Space Grotesk', sans-serif;
 }
 
 body {

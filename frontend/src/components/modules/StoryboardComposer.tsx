@@ -25,8 +25,10 @@ export default function StoryboardComposer() {
     const addRenderingFrame = useProjectStore((state) => state.addRenderingFrame);
     const removeRenderingFrame = useProjectStore((state) => state.removeRenderingFrame);
 
+    // Use global storyboard analysis state (persists across tab switches)
+    const isAnalyzing = useProjectStore((state) => state.isAnalyzingStoryboard);
+    const setIsAnalyzing = useProjectStore((state) => state.setIsAnalyzingStoryboard);
 
-    const [isAnalyzing, setIsAnalyzing] = useState(false);  // NEW: Analyze storyboard loading state
     const [editingFrameId, setEditingFrameId] = useState<string | null>(null);
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [insertIndex, setInsertIndex] = useState<number | null>(null);

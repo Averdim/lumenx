@@ -224,6 +224,10 @@ interface ProjectStore {
     renderingFrames: Set<string>;  // Set of frame IDs currently being rendered
     addRenderingFrame: (frameId: string) => void;
     removeRenderingFrame: (frameId: string) => void;
+
+    // Storyboard Analysis State (persists across tab switches)
+    isAnalyzingStoryboard: boolean;
+    setIsAnalyzingStoryboard: (value: boolean) => void;
 }
 
 export const useProjectStore = create<ProjectStore>()(
@@ -428,6 +432,10 @@ export const useProjectStore = create<ProjectStore>()(
                 newSet.delete(frameId);
                 return { renderingFrames: newSet };
             }),
+
+            // Storyboard Analysis State
+            isAnalyzingStoryboard: false,
+            setIsAnalyzingStoryboard: (value: boolean) => set({ isAnalyzingStoryboard: value }),
         }),
         {
             name: 'project-storage',

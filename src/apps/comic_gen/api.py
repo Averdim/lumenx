@@ -55,6 +55,8 @@ async def add_cache_control_header(request: Request, call_next):
 # Create output directory if it doesn't exist
 os.makedirs("output", exist_ok=True)
 os.makedirs("output/uploads", exist_ok=True)
+os.makedirs("output/video", exist_ok=True)
+os.makedirs("output/assets", exist_ok=True)
 
 # Mount static files with multiple aliases to handle plural/singular inconsistencies
 # Legacy paths in projects.json often use 'outputs/videos' or 'outputs/assets'
