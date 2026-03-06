@@ -770,8 +770,11 @@ class ComicGenPipeline:
             "props": [{"id": p.id, "name": p.name, "description": p.description} for p in script.props],
         }
         
-        # Call LLM to analyze text
+        # Call LLM to analyze text (may raise ValueError/RuntimeError on parse failure)
         raw_frames = self.script_processor.analyze_to_storyboard(text, entities_json)
+
+        if not raw_frames:
+            raise ValueError("AI 分镜分析未返回任何帧数据，请重试。")
         
         # Convert raw frame dicts to StoryboardFrame objects
         new_frames = []

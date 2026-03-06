@@ -682,29 +682,65 @@ Props:
             if response.status_code == 200:
                 content = response.output.choices[0].message.content.strip()
                 logger.debug(f"Storyboard Analysis Raw Response: {content[:500]}...")
-                
-                # Parse JSON
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
-                
-                try:
-                    result = json.loads(content.strip())
-                    frames = result.get("frames", [])
-                    logger.info(f"Storyboard Analysis generated {len(frames)} frames")
+
+                frames = self._parse_storyboard_json(content)
+                if frames is not None:
                     return frames
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse storyboard analysis JSON: {e}")
-                    return self._mock_storyboard_frames(text)
+
+                # First parse failed — retry once with response_format constraint
+                logger.warning("Storyboard JSON parse failed, retrying with response_format=json_object...")
+                retry_response = dashscope.Generation.call(
+                    model='qwen3.5-plus',
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": "请开始生成分镜帧列表，确保覆盖剧本中的所有内容。请务必输出合法的JSON格式。"}
+                    ],
+                    result_format='message',
+                    response_format={'type': 'json_object'},
+                )
+
+                if retry_response.status_code == 200:
+                    retry_content = retry_response.output.choices[0].message.content.strip()
+                    logger.debug(f"Storyboard Analysis Retry Response: {retry_content[:500]}...")
+                    frames = self._parse_storyboard_json(retry_content)
+                    if frames is not None:
+                        return frames
+
+                raise ValueError(
+                    "AI 模型输出的 JSON 格式不合规，自动重试后仍然失败。请重新点击生成按钮再试一次。"
+                )
             else:
                 logger.error(f"LLM Call Failed: {response.code} - {response.message}")
-                return self._mock_storyboard_frames(text)
-                
+                raise RuntimeError(
+                    f"AI 模型调用失败 (错误码: {response.code})，请稍后重试。"
+                )
+
+        except (ValueError, RuntimeError):
+            raise  # Re-raise our own descriptive errors
         except Exception as e:
             logger.error(f"Error in storyboard analysis: {e}", exc_info=True)
-            return self._mock_storyboard_frames(text)
+            raise RuntimeError(f"分镜分析过程出错: {str(e)}")
     
+    def _parse_storyboard_json(self, content: str):
+        """Try to parse storyboard JSON from LLM output. Returns frames list or None on failure."""
+        # Strip markdown code fences if present
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0]
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0]
+
+        try:
+            result = json.loads(content.strip())
+            frames = result.get("frames", [])
+            if not frames:
+                logger.warning("Parsed JSON successfully but 'frames' array is empty")
+                return None
+            logger.info(f"Storyboard Analysis generated {len(frames)} frames")
+            return frames
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse storyboard analysis JSON: {e}")
+            return None
+
     def _mock_storyboard_frames(self, text: str) -> List[Dict[str, Any]]:
         """Returns mock storyboard frames for testing when API is unavailable."""
         return [

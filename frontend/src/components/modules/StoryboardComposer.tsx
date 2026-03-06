@@ -56,11 +56,21 @@ export default function StoryboardComposer() {
         setIsAnalyzing(true);
         try {
             const updatedProject = await api.analyzeToStoryboard(currentProject.id, text);
-            updateProject(currentProject.id, updatedProject);
-            alert(`成功生成 ${updatedProject.frames?.length || 0} 个分镜帧！`);
-        } catch (error) {
+            const frameCount = updatedProject.frames?.length || 0;
+            if (frameCount > 0) {
+                updateProject(currentProject.id, updatedProject);
+                alert(`成功生成 ${frameCount} 个分镜帧！`);
+            } else {
+                alert("AI 模型未生成有效分镜帧，请重新点击按钮再试一次。");
+            }
+        } catch (error: any) {
             console.error("Analyze to storyboard failed:", error);
-            alert("分镜生成失败，请查看控制台了解详情。");
+            const detail = error?.response?.data?.detail || error?.message || "";
+            if (detail.includes("JSON") || detail.includes("格式")) {
+                alert(`分镜生成失败：AI 模型输出格式异常。\n\n这是模型偶发的格式问题，通常重试即可解决。请再次点击生成按钮。`);
+            } else {
+                alert(`分镜生成失败：${detail || "请查看控制台了解详情。"}`);
+            }
         } finally {
             setIsAnalyzing(false);
         }
