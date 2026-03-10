@@ -13,10 +13,9 @@ from typing import Dict, Any, Tuple
 import requests
 
 from .base import VideoGenModel
+from ..utils.endpoints import get_provider_base_url
 
 logger = logging.getLogger(__name__)
-
-BASE_URL = "https://api.vidu.cn/ent/v2"
 DEFAULT_T2V_MODEL = "viduq3-pro"
 DEFAULT_I2V_MODEL = "viduq3-pro"
 
@@ -55,6 +54,7 @@ class ViduModel(VideoGenModel):
         start_time = time.time()
 
         is_i2v = bool(img_url or img_path)
+        base_url = get_provider_base_url("VIDU")
 
         if is_i2v:
             task_id, used_model = self._submit_i2v(
@@ -82,7 +82,7 @@ class ViduModel(VideoGenModel):
         logger.info(f"[Vidu] Task submitted: {task_id} (model={used_model})")
 
         # Poll for completion
-        poll_url = f"{BASE_URL}/tasks/{task_id}/creations"
+        poll_url = f"{base_url}/tasks/{task_id}/creations"
         max_wait = 600
         poll_interval = 10
         elapsed = 0
@@ -136,7 +136,7 @@ class ViduModel(VideoGenModel):
             "bgm": bgm,
         }
 
-        submit_url = f"{BASE_URL}/text2video"
+        submit_url = f"{get_provider_base_url('VIDU')}/text2video"
         logger.info(f"[Vidu] Submitting t2v task (model={used_model}, duration={duration}s)")
 
         resp = requests.post(submit_url, headers=self._headers(), json=body, timeout=30)
@@ -171,7 +171,7 @@ class ViduModel(VideoGenModel):
             "audio": audio,
         }
 
-        submit_url = f"{BASE_URL}/img2video"
+        submit_url = f"{get_provider_base_url('VIDU')}/img2video"
         logger.info(f"[Vidu] Submitting i2v task (model={used_model}, duration={duration}s)")
 
         resp = requests.post(submit_url, headers=self._headers(), json=body, timeout=30)

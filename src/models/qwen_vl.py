@@ -4,9 +4,9 @@ import base64
 import time
 from typing import Tuple
 
-logger = logging.getLogger(__name__)
+from ..utils.endpoints import get_provider_base_url
 
-DASHSCOPE_OPENAI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+logger = logging.getLogger(__name__)
 
 # System prompt template for I2V prompt optimization
 I2V_OPTIMIZATION_PROMPT = """你是一个AI视频提示词专家，我需要你帮我根据参考图和已上传的现有提示词，去优化和补充现有的让图生视频的提示词，要求：
@@ -58,7 +58,7 @@ class QwenVLModel:
                 raise RuntimeError("openai package not installed. Run: pip install openai>=1.0.0")
             self._client = OpenAI(
                 api_key=self.api_key,
-                base_url=DASHSCOPE_OPENAI_BASE_URL,
+                base_url=f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1",
                 timeout=120.0,
             )
         return self._client

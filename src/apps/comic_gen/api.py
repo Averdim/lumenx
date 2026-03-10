@@ -266,6 +266,7 @@ class EnvConfig(BaseModel):
     KLING_ACCESS_KEY: Optional[str] = None
     KLING_SECRET_KEY: Optional[str] = None
     VIDU_API_KEY: Optional[str] = None
+    endpoint_overrides: Dict[str, str] = {}
 
 
 def get_user_config_path() -> str:
@@ -314,7 +315,7 @@ def load_user_config():
 def save_user_config(config_dict: dict):
     """Saves user config to file."""
     config_path = get_user_config_path()
-    
+
     if config_path.endswith(".json"):
         # JSON config for packaged app
         import json
@@ -335,22 +336,37 @@ def save_user_config(config_dict: dict):
                 set_key(config_path, key, value)
 
 
+def remove_user_config_keys(keys: list):
+    """Removes keys from the persisted config file."""
+    if not keys:
+        return
+    config_path = get_user_config_path()
+
+    if config_path.endswith(".json"):
+        import json
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r") as f:
+                    existing_config = json.load(f)
+                for key in keys:
+                    existing_config.pop(key, None)
+                with open(config_path, "w") as f:
+                    json.dump(existing_config, f, indent=2)
+            except Exception as e:
+                logger.warning(f"Failed to remove keys from config: {e}")
+    else:
+        from dotenv import unset_key
+        for key in keys:
+            try:
+                unset_key(config_path, key)
+            except Exception as e:
+                logger.warning(f"Failed to unset key {key} from .env: {e}")
+
+
 # Load user config on startup
 import sys
 load_user_config()
 
-
-@app.get("/config/env", response_model=EnvConfig)
-async def get_env_config():
-    """Gets current environment configuration."""
-    return EnvConfig(
-        DASHSCOPE_API_KEY=os.getenv("DASHSCOPE_API_KEY"),
-        ALIBABA_CLOUD_ACCESS_KEY_ID=os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID"),
-        ALIBABA_CLOUD_ACCESS_KEY_SECRET=os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET"),
-        OSS_BUCKET_NAME=os.getenv("OSS_BUCKET_NAME"),
-        OSS_ENDPOINT=os.getenv("OSS_ENDPOINT"),
-        OSS_BASE_PATH=os.getenv("OSS_BASE_PATH")
-    )
 
 
 @app.get("/config/info")
@@ -370,17 +386,36 @@ async def update_env_config(config: EnvConfig):
     """Updates environment configuration and saves to config file."""
     try:
         config_dict = config.dict(exclude_unset=True)
-        
+
+        # Extract endpoint_overrides and flatten into config_dict
+        endpoint_overrides = config_dict.pop("endpoint_overrides", {})
+
         # Filter out None values
         config_dict = {k: v for k, v in config_dict.items() if v is not None}
-        
+
+        # Process endpoint overrides: validate keys against known providers
+        from ...utils.endpoints import PROVIDER_DEFAULTS
+        allowed_keys = {f"{p}_BASE_URL" for p in PROVIDER_DEFAULTS}
+        keys_to_remove = []
+        for env_key, value in endpoint_overrides.items():
+            if env_key not in allowed_keys:
+                logger.warning(f"Ignoring unknown endpoint key: {env_key}")
+                continue
+            if value and value.strip():
+                config_dict[env_key] = value.strip()
+            else:
+                # Clear override: remove from env and config file
+                os.environ.pop(env_key, None)
+                keys_to_remove.append(env_key)
+
         # Update current process env
         for key, value in config_dict.items():
             os.environ[key] = value
-        
+
         # Save to file
         save_user_config(config_dict)
-        
+        remove_user_config_keys(keys_to_remove)
+
         # Reset OSS singleton to pick up new config (non-blocking)
         try:
             OSSImageUploader.reset_instance()
@@ -388,7 +423,7 @@ async def update_env_config(config: EnvConfig):
         except Exception as oss_e:
             # OSS reset failure should not block config saving
             logger.warning(f"OSS reset failed (non-critical): {oss_e}")
-        
+
         config_path = get_user_config_path()
         return {"status": "success", "message": f"Configuration saved to {config_path}"}
     except Exception as e:
@@ -1454,6 +1489,14 @@ async def polish_r2v_prompt(request: PolishR2VPromptRequest):
 async def get_env_config():
     """Get current environment configuration."""
     try:
+        from ...utils.endpoints import PROVIDER_DEFAULTS
+        endpoint_overrides = {}
+        for provider in PROVIDER_DEFAULTS:
+            env_key = f"{provider}_BASE_URL"
+            value = os.getenv(env_key)
+            if value:
+                endpoint_overrides[env_key] = value
+
         return {
             "DASHSCOPE_API_KEY": os.getenv("DASHSCOPE_API_KEY", ""),
             "ALIBABA_CLOUD_ACCESS_KEY_ID": os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID", ""),
@@ -1464,6 +1507,7 @@ async def get_env_config():
             "KLING_ACCESS_KEY": os.getenv("KLING_ACCESS_KEY", ""),
             "KLING_SECRET_KEY": os.getenv("KLING_SECRET_KEY", ""),
             "VIDU_API_KEY": os.getenv("VIDU_API_KEY", ""),
+            "endpoint_overrides": endpoint_overrides,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

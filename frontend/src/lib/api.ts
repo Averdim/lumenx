@@ -503,7 +503,7 @@ export const api = {
         return res.data;
     },
 
-    saveEnvConfig: async (config: Record<string, string | undefined>) => {
+    saveEnvConfig: async (config: Record<string, string | Record<string, string> | undefined>) => {
         const res = await axios.post(`${API_URL}/config/env`, config, {
             timeout: 60000, // 60 seconds timeout
         });

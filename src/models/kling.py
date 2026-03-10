@@ -16,10 +16,9 @@ import jwt
 import requests
 
 from .base import VideoGenModel
+from ..utils.endpoints import get_provider_base_url
 
 logger = logging.getLogger(__name__)
-
-BASE_URL = "https://api-beijing.klingai.com/v1"
 
 
 class KlingModel(VideoGenModel):
@@ -91,6 +90,7 @@ class KlingModel(VideoGenModel):
         start_time = time.time()
 
         is_i2v = bool(img_url or img_path)
+        base_url = get_provider_base_url("KLING")
 
         if is_i2v:
             # Image-to-Video
@@ -108,8 +108,8 @@ class KlingModel(VideoGenModel):
             image_value = self._resolve_image(image_source)
             body["image"] = self._strip_data_prefix(image_value)
 
-            submit_url = f"{BASE_URL}/videos/image2video"
-            poll_base = f"{BASE_URL}/videos/image2video"
+            submit_url = f"{base_url}/videos/image2video"
+            poll_base = f"{base_url}/videos/image2video"
         else:
             # Text-to-Video
             body = {
@@ -120,8 +120,8 @@ class KlingModel(VideoGenModel):
                 "duration": str(duration),  # T2V expects string
                 "aspect_ratio": aspect_ratio,
             }
-            submit_url = f"{BASE_URL}/videos/text2video"
-            poll_base = f"{BASE_URL}/videos/text2video"
+            submit_url = f"{base_url}/videos/text2video"
+            poll_base = f"{base_url}/videos/text2video"
 
         # Optional params
         if sound is not None:

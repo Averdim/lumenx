@@ -6,6 +6,7 @@ from dashscope import VideoSynthesis
 import dashscope
 from .base import VideoGenModel
 from ..utils import get_logger
+from ..utils.endpoints import get_provider_base_url
 
 from typing import Tuple
 
@@ -224,7 +225,8 @@ class WanxModel(VideoGenModel):
                                   watermark: bool = False, seed: int = None,
                                   shot_type: str = "single") -> str:
         """Generate video using Wan I2V (2.5 or 2.6) via HTTP API (asynchronous with polling)."""
-        create_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis"
+        base = get_provider_base_url("DASHSCOPE")
+        create_url = f"{base}/api/v1/services/aigc/video-generation/video-synthesis"
         
         headers = {
             "Content-Type": "application/json",
@@ -279,7 +281,7 @@ class WanxModel(VideoGenModel):
         logger.info(f"Task created: {task_id}")
         
         # Step 2: Poll for task completion
-        poll_url = f"https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
+        poll_url = f"{base}/api/v1/tasks/{task_id}"
         poll_headers = {
             "Authorization": f"Bearer {self.api_key}"
         }
@@ -328,7 +330,8 @@ class WanxModel(VideoGenModel):
                                   duration: int = 5, audio: bool = True,
                                   shot_type: str = "multi", seed: int = None) -> str:
         """Generate video using Wan R2V via HTTP API (asynchronous with polling)."""
-        create_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis"
+        base = get_provider_base_url("DASHSCOPE")
+        create_url = f"{base}/api/v1/services/aigc/video-generation/video-synthesis"
         
         headers = {
             "Content-Type": "application/json",
@@ -375,7 +378,7 @@ class WanxModel(VideoGenModel):
         logger.info(f"Task created: {task_id}")
         
         # Step 2: Poll for task completion
-        poll_url = f"https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
+        poll_url = f"{base}/api/v1/tasks/{task_id}"
         poll_headers = {
             "Authorization": f"Bearer {self.api_key}"
         }
