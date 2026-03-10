@@ -7,6 +7,7 @@ from http import HTTPStatus
 import dashscope
 from dashscope import ImageSynthesis
 from ..utils import get_logger
+from ..utils.endpoints import get_provider_base_url
 from ..utils.oss_utils import OSSImageUploader
 
 logger = get_logger(__name__)
@@ -121,7 +122,8 @@ class WanxImageModel(ImageGenModel):
 
     def _generate_wan26_http(self, prompt: str, size: str, n: int, negative_prompt: str = None) -> str:
         """Generate image using Wan 2.6 T2I via HTTP API (synchronous)."""
-        url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+        base = get_provider_base_url("DASHSCOPE")
+        url = f"{base}/api/v1/services/aigc/multimodal-generation/generation"
         
         headers = {
             "Content-Type": "application/json",
@@ -189,7 +191,8 @@ class WanxImageModel(ImageGenModel):
 
     def _generate_wan26_image_http(self, prompt: str, size: str, n: int, negative_prompt: str = None, ref_image_paths: list = None) -> str:
         """Generate image using Wan 2.6 Image via HTTP API (asynchronous with polling)."""
-        create_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/image-generation/generation"
+        base = get_provider_base_url("DASHSCOPE")
+        create_url = f"{base}/api/v1/services/aigc/image-generation/generation"
         
         headers = {
             "Content-Type": "application/json",
@@ -282,7 +285,7 @@ class WanxImageModel(ImageGenModel):
         logger.info(f"Task created: {task_id}")
         
         # Step 2: Poll for task completion
-        poll_url = f"https://dashscope.aliyuncs.com/api/v1/tasks/{task_id}"
+        poll_url = f"{base}/api/v1/tasks/{task_id}"
         poll_headers = {
             "Authorization": f"Bearer {self.api_key}"
         }

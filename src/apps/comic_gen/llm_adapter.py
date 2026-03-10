@@ -16,9 +16,9 @@ import os
 import logging
 from typing import Dict, List, Optional, Any
 
-logger = logging.getLogger(__name__)
+from ...utils.endpoints import get_provider_base_url
 
-DASHSCOPE_OPENAI_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+logger = logging.getLogger(__name__)
 
 
 class LLMAdapter:
@@ -54,7 +54,7 @@ class LLMAdapter:
                 # DashScope uses OpenAI-compatible endpoint
                 self._client = OpenAI(
                     api_key=os.getenv("DASHSCOPE_API_KEY"),
-                    base_url=DASHSCOPE_OPENAI_BASE_URL,
+                    base_url=f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1",
                 )
         return self._client
 

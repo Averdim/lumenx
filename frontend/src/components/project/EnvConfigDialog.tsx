@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Save, Settings } from "lucide-react";
+import { X, Save, Settings, ChevronDown, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 
 interface EnvConfigDialogProps {
@@ -20,8 +20,15 @@ interface EnvConfig {
   KLING_ACCESS_KEY: string;
   KLING_SECRET_KEY: string;
   VIDU_API_KEY: string;
-  [key: string]: string;
+  endpoint_overrides: Record<string, string>;
+  [key: string]: string | Record<string, string>;
 }
+
+const ENDPOINT_PROVIDERS = [
+  { key: "DASHSCOPE_BASE_URL", label: "DashScope", placeholder: "https://dashscope.aliyuncs.com" },
+  { key: "KLING_BASE_URL", label: "Kling", placeholder: "https://api-beijing.klingai.com/v1" },
+  { key: "VIDU_BASE_URL", label: "Vidu", placeholder: "https://api.vidu.cn/ent/v2" },
+];
 
 export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }: EnvConfigDialogProps) {
   const [config, setConfig] = useState<EnvConfig>({
@@ -34,9 +41,11 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
     KLING_ACCESS_KEY: "",
     KLING_SECRET_KEY: "",
     VIDU_API_KEY: "",
+    endpoint_overrides: {},
   });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [endpointsOpen, setEndpointsOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -48,7 +57,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
     setLoading(true);
     try {
       const data = await api.getEnvConfig();
-      setConfig(data);
+      setConfig({ ...config, ...data, endpoint_overrides: data.endpoint_overrides ?? {} });
     } catch (error) {
       console.error("Failed to load env config:", error);
     } finally {
@@ -96,6 +105,13 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
 
   const handleChange = (key: keyof EnvConfig, value: string) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleEndpointChange = (envKey: string, value: string) => {
+    setConfig((prev) => ({
+      ...prev,
+      endpoint_overrides: { ...prev.endpoint_overrides, [envKey]: value },
+    }));
   };
 
   const canClose = !isRequired || validateRequiredFields();
@@ -301,6 +317,42 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
                   />
                 </div>
+              </div>
+
+              {/* Advanced: API Endpoints */}
+              <div className="pt-4 border-t border-gray-800">
+                <button
+                  type="button"
+                  onClick={() => setEndpointsOpen(!endpointsOpen)}
+                  aria-expanded={endpointsOpen}
+                  className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-gray-200 transition-colors"
+                >
+                  {endpointsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  高级选项: API 端点
+                </button>
+
+                {endpointsOpen && (
+                  <div className="mt-4 space-y-4">
+                    <p className="text-xs text-gray-500">
+                      自定义 API 端点地址，留空则使用默认值。海外部署时可切换到国际端点。
+                    </p>
+                    {ENDPOINT_PROVIDERS.map(({ key, label, placeholder }) => (
+                      <div key={key}>
+                        <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
+                          <span>{label} Base URL</span>
+                          <span className="text-gray-600 font-normal text-xs">{placeholder}</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={config.endpoint_overrides[key] || ""}
+                          onChange={(e) => handleEndpointChange(key, e.target.value)}
+                          placeholder={placeholder}
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary text-sm"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}
