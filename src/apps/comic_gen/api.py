@@ -1488,6 +1488,16 @@ async def get_style_presets():
 # NOTE: /storyboard/polish_prompt removed - use /storyboard/refine_prompt instead
 
 
+def _get_custom_prompt(script_id: str, field: str) -> str:
+    """Read a custom prompt from project's prompt_config. Returns empty string if not set."""
+    if not script_id:
+        return ""
+    script = pipeline.get_script(script_id)
+    if script and hasattr(script, 'prompt_config'):
+        return getattr(script.prompt_config, field, "")
+    return ""
+
+
 class PolishVideoPromptRequest(BaseModel):
     draft_prompt: str
     feedback: str = Field("", max_length=2000)  # User feedback for iterative refinement
@@ -1498,11 +1508,7 @@ class PolishVideoPromptRequest(BaseModel):
 async def polish_video_prompt(request: PolishVideoPromptRequest):
     """Polishes a video generation prompt using LLM. Returns bilingual prompts."""
     try:
-        custom_prompt = ""
-        if request.script_id:
-            script = pipeline.get_script(request.script_id)
-            if script and hasattr(script, 'prompt_config'):
-                custom_prompt = script.prompt_config.video_polish
+        custom_prompt = _get_custom_prompt(request.script_id, "video_polish")
         processor = ScriptProcessor()
         result = processor.polish_video_prompt(request.draft_prompt, request.feedback, custom_prompt)
         return {
@@ -1530,11 +1536,7 @@ class PolishR2VPromptRequest(BaseModel):
 async def polish_r2v_prompt(request: PolishR2VPromptRequest):
     """Polishes a R2V (Reference-to-Video) prompt using LLM. Returns bilingual prompts."""
     try:
-        custom_prompt = ""
-        if request.script_id:
-            script = pipeline.get_script(request.script_id)
-            if script and hasattr(script, 'prompt_config'):
-                custom_prompt = script.prompt_config.r2v_polish
+        custom_prompt = _get_custom_prompt(request.script_id, "r2v_polish")
         processor = ScriptProcessor()
         slot_info = [{"description": s.description} for s in request.slots]
         result = processor.polish_r2v_prompt(request.draft_prompt, slot_info, request.feedback, custom_prompt)

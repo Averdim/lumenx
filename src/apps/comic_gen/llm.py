@@ -84,10 +84,10 @@ Rewrite the following draft prompt into a high-quality video generation prompt f
 
 OUTPUT FORMAT:
 Return STRICTLY a JSON object:
-{
+{{
     "prompt_cn": "润色后的中文视频提示词，关注运动和镜头",
     "prompt_en": "Polished English video prompt, focusing on motion and camera"
-}"""
+}}"""
 
 DEFAULT_R2V_POLISH_PROMPT = """# Role
 You are a prompt engineer for the Wan 2.6 Reference-to-Video model.

@@ -44,10 +44,13 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
     const [expandedDefault, setExpandedDefault] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     useEffect(() => {
         if (isOpen && currentProject) {
             setIsLoading(true);
+            setLoadError(null);
+            setExpandedDefault(null);
             api.getPromptConfig(currentProject.id)
                 .then((data) => {
                     setConfig(data.prompt_config);
@@ -55,6 +58,7 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                 })
                 .catch((err) => {
                     console.error("Failed to load prompt config:", err);
+                    setLoadError("Failed to load prompt configuration. Please try again.");
                 })
                 .finally(() => setIsLoading(false));
         }
@@ -120,6 +124,10 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                                 <Loader2 size={24} className="animate-spin text-purple-400" />
                                 <span className="ml-2 text-gray-400">Loading configuration...</span>
                             </div>
+                        ) : loadError ? (
+                            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-300">
+                                {loadError}
+                            </div>
                         ) : (
                             <>
                                 <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-300">
@@ -160,9 +168,7 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                                                     View full default prompt
                                                 </button>
                                                 {expandedDefault === section.key && (
-                                                    <pre className="mt-2 bg-black/40 border border-white/5 rounded-lg p-3 text-[10px] text-gray-500 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap font-mono">
-                                                        {defaults[section.key]}
-                                                    </pre>
+                                                    <pre className="mt-2 bg-black/40 border border-white/5 rounded-lg p-3 text-[10px] text-gray-500 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap font-mono">{defaults[section.key]}</pre>
                                                 )}
                                             </div>
                                         )}
@@ -186,7 +192,7 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                         </button>
                         <button
                             onClick={handleSave}
-                            disabled={isSaving || isLoading}
+                            disabled={isSaving || isLoading || !!loadError}
                             className="px-6 py-2 text-sm font-medium bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
                         >
                             {isSaving && <Loader2 size={14} className="animate-spin" />}

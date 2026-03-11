@@ -184,3 +184,51 @@ describe('buildPromptConfigPayload', () => {
         });
     });
 });
+
+// ── _get_custom_prompt helper logic (mirrors api.py helper) ──
+
+function getCustomPrompt(
+    scriptId: string,
+    field: string,
+    projects: Record<string, { prompt_config?: Record<string, string> }>,
+): string {
+    if (!scriptId) return "";
+    const script = projects[scriptId];
+    if (script && script.prompt_config) {
+        return script.prompt_config[field] || "";
+    }
+    return "";
+}
+
+describe('getCustomPrompt (backend helper mirror)', () => {
+    const projects: Record<string, { prompt_config?: Record<string, string> }> = {
+        "proj-1": {
+            prompt_config: {
+                storyboard_polish: "Custom storyboard",
+                video_polish: "",
+                r2v_polish: "Custom R2V",
+            }
+        },
+        "proj-2": {}
+    };
+
+    it('should return empty string when scriptId is empty', () => {
+        expect(getCustomPrompt("", "video_polish", projects)).toBe("");
+    });
+
+    it('should return custom value when set', () => {
+        expect(getCustomPrompt("proj-1", "storyboard_polish", projects)).toBe("Custom storyboard");
+    });
+
+    it('should return empty string when field is empty', () => {
+        expect(getCustomPrompt("proj-1", "video_polish", projects)).toBe("");
+    });
+
+    it('should return empty string when project has no prompt_config', () => {
+        expect(getCustomPrompt("proj-2", "video_polish", projects)).toBe("");
+    });
+
+    it('should return empty string when project does not exist', () => {
+        expect(getCustomPrompt("nonexistent", "video_polish", projects)).toBe("");
+    });
+});
