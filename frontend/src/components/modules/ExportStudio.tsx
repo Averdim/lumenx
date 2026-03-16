@@ -42,9 +42,9 @@ export default function ExportStudio() {
     };
 
     return (
-        <div className="flex h-full bg-[#0a0a0a] text-white">
+        <div className="flex h-full text-white">
             {/* Left: Configuration */}
-            <div className="w-96 border-r border-white/10 bg-[#111] p-8 flex flex-col">
+            <div className="w-96 border-r border-white/10 bg-black/20 p-8 flex flex-col">
                 <h2 className="text-2xl font-display font-bold mb-8 flex items-center gap-3">
                     <Film className="text-primary" /> Export Studio
                 </h2>
@@ -128,13 +128,13 @@ export default function ExportStudio() {
             </div>
 
             {/* Right: Preview & Status */}
-            <div className="flex-1 flex items-center justify-center bg-[#0a0a0a] relative overflow-hidden">
+            <div className="flex-1 flex items-center justify-center relative overflow-hidden">
                 {/* Background Glow */}
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-purple-900/10 pointer-events-none" />
 
                 <div className="w-full max-w-2xl p-8 text-center space-y-8 relative z-10">
                     {isExporting ? (
-                        <div className="bg-[#111] border border-white/10 rounded-2xl p-12 shadow-2xl">
+                        <div className="bg-black/30 backdrop-blur-xl border border-white/10 rounded-2xl p-12 shadow-2xl">
                             <div className="w-24 h-24 border-4 border-white/10 border-t-primary rounded-full animate-spin mx-auto mb-8" />
                             <h3 className="text-2xl font-bold mb-2">Rendering Your Masterpiece</h3>
                             <p className="text-gray-400 mb-8">Stitching video, mixing audio, and burning subtitles...</p>
@@ -145,7 +145,7 @@ export default function ExportStudio() {
                             <div className="mt-2 text-right text-sm font-mono text-primary">{progress}%</div>
                         </div>
                     ) : exportUrl ? (
-                        <div className="bg-[#111] border border-green-500/30 rounded-2xl p-12 shadow-2xl shadow-green-900/20">
+                        <div className="bg-black/30 backdrop-blur-xl border border-green-500/30 rounded-2xl p-12 shadow-2xl shadow-green-900/20">
                             <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <CheckCircle size={40} />
                             </div>

@@ -64,12 +64,12 @@ export default function FinalMixStudio() {
     };
 
     return (
-        <div className="flex flex-col h-full bg-[#0a0a0a] text-white">
+        <div className="flex flex-col h-full text-white">
             {/* Top Bar: Preview & Mixer */}
             <div className="flex-1 flex border-b border-white/10 min-h-0">
                 {/* Preview Window */}
-                <div className="flex-1 bg-black flex items-center justify-center relative p-8">
-                    <div className="aspect-video bg-[#111] border border-white/10 rounded-lg w-full max-w-4xl flex items-center justify-center relative overflow-hidden shadow-2xl">
+                <div className="flex-1 bg-black/80 flex items-center justify-center relative p-8">
+                    <div className="aspect-video bg-black/20 border border-white/10 rounded-lg w-full max-w-4xl flex items-center justify-center relative overflow-hidden shadow-2xl">
                         {/* Mock Video Player */}
                         <div className="text-gray-500 flex flex-col items-center gap-4">
                             <Video size={48} className="opacity-20" />
@@ -84,10 +84,11 @@ export default function FinalMixStudio() {
                 </div>
 
                 {/* Mixer Panel */}
-                <div className="w-80 bg-[#111] border-l border-white/10 flex flex-col">
+                <div className="w-80 bg-black/20 border-l border-white/10 flex flex-col">
                     <div className="p-4 border-b border-white/10">
-                        <h3 className="font-bold text-sm flex items-center gap-2">
+                        <h3 className="font-display font-bold text-sm flex items-center gap-2">
                             <Sliders size={16} className="text-primary" /> Audio Mixer
+                            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium ml-2">Beta</span>
                         </h3>
                     </div>
                     <div className="p-6 space-y-8">
@@ -136,9 +137,9 @@ export default function FinalMixStudio() {
             </div>
 
             {/* Bottom: Multi-track Timeline */}
-            <div className="h-72 bg-[#0f0f0f] border-t border-white/10 flex flex-col">
+            <div className="h-72 bg-black/10 border-t border-white/10 flex flex-col">
                 {/* Timeline Toolbar */}
-                <div className="h-10 border-b border-white/5 flex items-center px-4 justify-between bg-[#111]">
+                <div className="h-10 border-b border-white/5 flex items-center px-4 justify-between bg-black/20">
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => setIsPlaying(!isPlaying)}
@@ -176,8 +177,8 @@ export default function FinalMixStudio() {
 
                     <div className="min-w-full h-full flex flex-col" style={{ width: `${100 * zoom}%` }}>
                         {/* Video Track */}
-                        <div className="h-16 border-b border-white/5 bg-[#1a1a1a] relative flex items-center px-2 group">
-                            <div className="absolute left-0 top-0 bottom-0 w-24 bg-[#222] z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
+                        <div className="h-16 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2 group">
+                            <div className="absolute left-0 top-0 bottom-0 w-24 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
                                 Video
                             </div>
                             <div className="ml-24 flex-1 flex gap-1 h-12">
@@ -191,8 +192,8 @@ export default function FinalMixStudio() {
                         </div>
 
                         {/* Dialogue Track */}
-                        <div className="h-12 border-b border-white/5 bg-[#151515] relative flex items-center px-2">
-                            <div className="absolute left-0 top-0 bottom-0 w-24 bg-[#222] z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
+                        <div className="h-12 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2">
+                            <div className="absolute left-0 top-0 bottom-0 w-24 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
                                 Dialogue
                             </div>
                             <div className="ml-24 flex-1 flex gap-1 h-8">
@@ -213,8 +214,8 @@ export default function FinalMixStudio() {
                         </div>
 
                         {/* SFX Track */}
-                        <div className="h-12 border-b border-white/5 bg-[#151515] relative flex items-center px-2">
-                            <div className="absolute left-0 top-0 bottom-0 w-24 bg-[#222] z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
+                        <div className="h-12 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2">
+                            <div className="absolute left-0 top-0 bottom-0 w-24 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
                                 SFX
                             </div>
                             <div className="ml-24 flex-1 flex gap-1 h-8">
@@ -231,8 +232,8 @@ export default function FinalMixStudio() {
                         </div>
 
                         {/* BGM Track */}
-                        <div className="h-12 border-b border-white/5 bg-[#151515] relative flex items-center px-2">
-                            <div className="absolute left-0 top-0 bottom-0 w-24 bg-[#222] z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
+                        <div className="h-12 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2">
+                            <div className="absolute left-0 top-0 bottom-0 w-24 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
                                 BGM
                             </div>
                             <div className="ml-24 flex-1 h-8 relative">

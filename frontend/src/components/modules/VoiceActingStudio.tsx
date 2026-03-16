@@ -94,13 +94,13 @@ export default function VoiceActingStudio() {
     ];
 
     return (
-        <div className="flex h-full bg-[#0a0a0a] text-white">
+        <div className="flex h-full text-white">
             <audio ref={audioRef} onEnded={() => setPlayingAudio(null)} className="hidden" />
 
             {/* Left Sidebar: Casting Room */}
-            <div className="w-80 border-r border-white/10 flex flex-col bg-[#111]">
+            <div className="w-80 border-r border-white/10 flex flex-col bg-black/20">
                 <div className="p-4 border-b border-white/10">
-                    <h3 className="font-bold text-sm flex items-center gap-2">
+                    <h3 className="font-display font-bold text-sm flex items-center gap-2">
                         <Users size={16} className="text-primary" /> Casting Room
                     </h3>
                 </div>
@@ -150,7 +150,7 @@ export default function VoiceActingStudio() {
             {/* Main Content: Script Reader */}
             <div className="flex-1 flex flex-col relative">
                 {/* Toolbar */}
-                <div className="h-14 border-b border-white/10 bg-[#111] flex items-center px-6 justify-between">
+                <div className="h-14 border-b border-white/10 bg-black/20 flex items-center px-6 justify-between">
                     <div className="flex items-center gap-4">
                         <h2 className="font-display font-bold text-lg">Script Reader</h2>
                         <div className="h-4 w-px bg-white/10" />
@@ -214,7 +214,7 @@ export default function VoiceActingStudio() {
 
                                         {/* Settings Popover */}
                                         {isSettingsOpen && (
-                                            <div className="absolute top-full left-0 mt-2 w-64 bg-[#1a1a1a] border border-white/10 rounded-xl p-4 shadow-xl z-10">
+                                            <div className="absolute top-full left-0 mt-2 w-64 bg-black/30 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-xl z-10">
                                                 <div className="space-y-4">
                                                     <div>
                                                         <label className="flex justify-between text-xs text-gray-400 mb-1">
