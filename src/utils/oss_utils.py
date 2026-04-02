@@ -4,6 +4,7 @@ import hashlib
 import time
 from typing import Optional, Tuple
 from . import get_logger
+from .media_refs import classify_media_ref, MEDIA_REF_LOCAL_PATH, MEDIA_REF_OBJECT_KEY
 
 logger = get_logger(__name__)
 
@@ -33,31 +34,10 @@ def is_object_key(value: str) -> bool:
     """
     Check if a string value is an OSS Object Key (not a full URL or local path).
     """
-    if not value or not isinstance(value, str):
-        return False
-    # Skip full URLs
-    if value.startswith(("http://", "https://", "blob:", "data:")):
-        return False
-    # Skip empty or whitespace-only
-    if not value.strip():
-        return False
-    
-    # Skip local paths (these start with known local directories)
-    # Be very inclusive here to avoid signing local files
-    local_prefixes = (
-        "assets/", "storyboard/", "video/", "audio/", "export/", "uploads/", "output/", "outputs/",
-        "/assets/", "/storyboard/", "/video/", "/audio/", "/export/", "/uploads/", "/output/", "/outputs/"
+    return (
+        classify_media_ref(value, oss_base_path=get_oss_base_path())
+        == MEDIA_REF_OBJECT_KEY
     )
-    if value.startswith(local_prefixes):
-        return False
-    
-    # Get the current OSS base path and ensure it ends with a single slash
-    # Strip quotes and slashes to be robust
-    base_path = get_oss_base_path().strip("'\"/")
-    
-    # Object keys MUST start with the OSS base path (e.g., 'lumenx/')
-    # This is the ONLY valid check. Do NOT add a fallback that might match local paths.
-    return value.startswith(f"{base_path}/")
 
 
 
@@ -69,12 +49,10 @@ def is_object_key(value: str) -> bool:
 
 def is_local_path(value: str) -> bool:
     """Check if a string is a local file path (relative or absolute)."""
-    if not value or not isinstance(value, str):
-        return False
-    if value.startswith("http://") or value.startswith("https://"):
-        return False
-    # Check if it's a relative path starting with known directories
-    return value.startswith(("assets/", "storyboard/", "video/", "audio/", "export/", "uploads/", "output/"))
+    return (
+        classify_media_ref(value, oss_base_path=get_oss_base_path())
+        == MEDIA_REF_LOCAL_PATH
+    )
 
 
 class OSSImageUploader:
@@ -332,4 +310,3 @@ def convert_local_path_to_object_key(local_path: str, project_id: str = None) ->
         return f"{base_path}/{project_id}/{local_path}"
     else:
         return f"{base_path}/{local_path}"
-
