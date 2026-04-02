@@ -13,7 +13,14 @@ import uuid
 import logging
 import traceback
 from .pipeline import ComicGenPipeline
-from .models import Script, VideoTask, PromptConfig, Series
+from .models import (
+    PromptConfig,
+    ProviderBackend,
+    ProviderRoutingConfig,
+    Script,
+    Series,
+    VideoTask,
+)
 from .llm import ScriptProcessor, DEFAULT_STORYBOARD_POLISH_PROMPT, DEFAULT_VIDEO_POLISH_PROMPT, DEFAULT_R2V_POLISH_PROMPT
 from ...utils.oss_utils import OSSImageUploader, sign_oss_urls_in_data
 from ...utils import setup_logging
@@ -641,7 +648,7 @@ async def import_file_confirm(request: ConfirmImportRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class EnvConfig(BaseModel):
+class EnvConfig(ProviderRoutingConfig):
     DASHSCOPE_API_KEY: Optional[str] = None
     ALIBABA_CLOUD_ACCESS_KEY_ID: Optional[str] = None
     ALIBABA_CLOUD_ACCESS_KEY_SECRET: Optional[str] = None
@@ -651,7 +658,14 @@ class EnvConfig(BaseModel):
     KLING_ACCESS_KEY: Optional[str] = None
     KLING_SECRET_KEY: Optional[str] = None
     VIDU_API_KEY: Optional[str] = None
-    endpoint_overrides: Dict[str, str] = {}
+    endpoint_overrides: Dict[str, str] = Field(default_factory=dict)
+
+
+def _normalize_provider_mode(value: Optional[str]) -> str:
+    normalized = (value or "").strip().lower()
+    if normalized in (ProviderBackend.DASHSCOPE.value, ProviderBackend.VENDOR.value):
+        return normalized
+    return ProviderBackend.DASHSCOPE.value
 
 
 def get_user_config_path() -> str:
@@ -770,13 +784,20 @@ async def get_config_info():
 async def update_env_config(config: EnvConfig):
     """Updates environment configuration and saves to config file."""
     try:
-        config_dict = config.dict(exclude_unset=True)
+        raw_config = config.dict(exclude_unset=True)
 
         # Extract endpoint_overrides and flatten into config_dict
-        endpoint_overrides = config_dict.pop("endpoint_overrides", {})
+        endpoint_overrides = raw_config.pop("endpoint_overrides", {})
 
-        # Filter out None values
-        config_dict = {k: v for k, v in config_dict.items() if v is not None}
+        # Filter out None values and serialize enum values as plain strings.
+        config_dict: Dict[str, str] = {}
+        for key, value in raw_config.items():
+            if value is None:
+                continue
+            if isinstance(value, ProviderBackend):
+                config_dict[key] = value.value
+            else:
+                config_dict[key] = value
 
         # Process endpoint overrides: validate keys against known providers
         from ...utils.endpoints import PROVIDER_DEFAULTS
@@ -2000,6 +2021,9 @@ async def get_env_config():
             "KLING_ACCESS_KEY": os.getenv("KLING_ACCESS_KEY", ""),
             "KLING_SECRET_KEY": os.getenv("KLING_SECRET_KEY", ""),
             "VIDU_API_KEY": os.getenv("VIDU_API_KEY", ""),
+            "KLING_PROVIDER_MODE": _normalize_provider_mode(os.getenv("KLING_PROVIDER_MODE")),
+            "VIDU_PROVIDER_MODE": _normalize_provider_mode(os.getenv("VIDU_PROVIDER_MODE")),
+            "PIXVERSE_PROVIDER_MODE": _normalize_provider_mode(os.getenv("PIXVERSE_PROVIDER_MODE")),
             "endpoint_overrides": endpoint_overrides,
         }
     except Exception as e:
@@ -2063,4 +2087,3 @@ async def delete_prop(script_id: str, prop_id: str):
     pipeline._save_data()
 
     return signed_response(script)
-

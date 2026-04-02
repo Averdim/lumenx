@@ -15,6 +15,26 @@ class GenerationStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
 
+
+class ProviderBackend(str, Enum):
+    DASHSCOPE = "dashscope"
+    VENDOR = "vendor"
+
+
+class ProviderRoutingConfig(BaseModel):
+    KLING_PROVIDER_MODE: ProviderBackend = Field(
+        ProviderBackend.DASHSCOPE,
+        description="Provider backend for kling-* models: dashscope or vendor",
+    )
+    VIDU_PROVIDER_MODE: ProviderBackend = Field(
+        ProviderBackend.DASHSCOPE,
+        description="Provider backend for vidu* models: dashscope or vendor",
+    )
+    PIXVERSE_PROVIDER_MODE: ProviderBackend = Field(
+        ProviderBackend.DASHSCOPE,
+        description="Provider backend for pixverse-* models: dashscope or vendor",
+    )
+
 class ImageVariant(BaseModel):
     id: str = Field(..., description="Unique identifier for the variant")
     url: str = Field(..., description="URL of the image")
