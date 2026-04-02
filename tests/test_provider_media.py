@@ -82,6 +82,24 @@ def test_dashscope_non_image_local_without_oss_uses_temp_url_and_header(tmp_path
     assert resolved.headers.get(RESOLVE_HEADER_DASHSCOPE_OSS_RESOURCE) == "enable"
 
 
+def test_dashscope_non_image_local_without_oss_and_without_temp_resolver_fails_fast(tmp_path):
+    _write_output_png(tmp_path, "video/ref.mp4")
+    uploader = FakeUploader(configured=False)
+
+    with pytest.raises(
+        ValueError,
+        match="requires OSS or a dashscope_temp_url_resolver",
+    ):
+        resolve_media_input(
+            "video/ref.mp4",
+            model_name="wan2.6-i2v",
+            backend="dashscope",
+            modality="audio",
+            uploader=uploader,
+            project_root=str(tmp_path),
+        )
+
+
 def test_dashscope_local_uses_oss_signed_url_when_configured(tmp_path):
     _write_output_png(tmp_path, "uploads/ref.png")
     uploader = FakeUploader(configured=True)

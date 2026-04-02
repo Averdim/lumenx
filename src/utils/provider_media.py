@@ -1,8 +1,8 @@
 import base64
 import mimetypes
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence
+from types import MappingProxyType
+from typing import Callable, Dict, List, Mapping, Optional, Sequence
 
 from .media_refs import (
     MEDIA_REF_BLOB_URL,
@@ -27,9 +27,13 @@ _DASHSCOPE_TEMP_SUB_PATH = "temp/provider_media"
 @dataclass(frozen=True)
 class ResolvedMediaInput:
     value: str
-    headers: Dict[str, str] = field(default_factory=dict)
+    headers: Mapping[str, str] = field(default_factory=dict)
     source_ref: Optional[str] = None
     media_ref_type: Optional[str] = None
+
+    def __post_init__(self):
+        immutable_headers = MappingProxyType(dict(self.headers or {}))
+        object.__setattr__(self, "headers", immutable_headers)
 
 
 def _normalize_modality(modality: str) -> str:
@@ -88,12 +92,6 @@ def _upload_then_sign(local_path: str, uploader, sub_path: str = _DASHSCOPE_TEMP
     if not object_key:
         return None
     return uploader.sign_url_for_api(object_key)
-
-
-def _default_dashscope_temp_url_resolver(local_path: str) -> str:
-    # DashScope supports local `file://` references for some media APIs.
-    # Caller can inject an alternative resolver to mint `oss://` temp URLs.
-    return Path(local_path).resolve().as_uri()
 
 
 def _resolved(value: str, *, source_ref: str, media_ref_type: str, headers: Optional[Dict[str, str]] = None) -> ResolvedMediaInput:
@@ -161,8 +159,15 @@ def _resolve_dashscope_temp_url(
         if signed_url:
             return _resolved(signed_url, source_ref=ref, media_ref_type=ref_type)
 
-        resolver = dashscope_temp_url_resolver or _default_dashscope_temp_url_resolver
+        if dashscope_temp_url_resolver is None:
+            raise ValueError(
+                "DashScope URL-based media input requires OSS or a dashscope_temp_url_resolver "
+                "for local media. Configure OSS or provide a DashScope temp-url resolver."
+            )
+        resolver = dashscope_temp_url_resolver
         temp_url = resolver(local_path)
+        if not isinstance(temp_url, str) or not temp_url.strip():
+            raise ValueError("dashscope_temp_url_resolver returned an empty URL.")
         headers = {}
         if temp_url.startswith("oss://"):
             headers[RESOLVE_HEADER_DASHSCOPE_OSS_RESOURCE] = "enable"
