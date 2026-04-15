@@ -1595,30 +1595,85 @@ class ComicGenPipeline:
         return script
 
     def _download_temp_image(self, url: str) -> str:
-        """Downloads an image to a temporary file."""
-        import requests
-        import tempfile
+        """
+        Prepares an image for video generation.
+        - If already an OSS object key, return it directly (no download needed).
+        - If a local path under output/, upload to OSS and return object key.
+        - If a remote URL, download, upload to OSS, and return object key.
+        """
+        from ...utils.oss_utils import OSSImageUploader
         
-        # If it's a local file path (relative to output)
-        if not url.startswith("http"):
-            local_path = _safe_resolve_path("output", url)
-            if os.path.exists(local_path):
-                return local_path
+        uploader = OSSImageUploader()
+        
+        # Case 1: Already an OSS object key - return as-is
+        if not url.startswith(("http://", "https://")) and not os.path.isabs(url):
+            # Check if it looks like an OSS object key (contains slashes but not a local relative path)
+            from ...utils.media_refs import classify_media_ref
+            ref_type = classify_media_ref(url)
+            if ref_type == "object_key":
+                logger.debug(f"Image is already OSS object key: {url}")
+                return url
+        
+        # Case 2: Local file path (relative or absolute under output/)
+        local_path = None
+        if not url.startswith(("http://", "https://")):
+            # Try to resolve as local path
+            if os.path.isabs(url):
+                # Absolute path - check if under output/
+                output_abs = os.path.abspath("output")
+                if url.startswith(output_abs):
+                    local_path = url
+            else:
+                # Relative path - prepend output/
+                potential_path = _safe_resolve_path("output", url)
+                if os.path.exists(potential_path):
+                    local_path = potential_path
+        
+        if local_path and os.path.exists(local_path):
+            # Upload local file to OSS
+            if uploader.is_configured:
+                object_key = uploader.upload_file(local_path, sub_path="temp/video_input")
+                if object_key:
+                    logger.info(f"Uploaded video input image to OSS: {object_key}")
+                    return object_key
+            # Fallback: return local path (resolve_media_input will handle base64 conversion)
+            return local_path
+        
+        # Case 3: Remote URL - download and upload to OSS
+        if url.startswith(("http://", "https://")):
+            try:
+                import requests
+                import tempfile
                 
-        # Download from URL
-        try:
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
-            
-            # Create temp file
-            fd, path = tempfile.mkstemp(suffix=".png")
-            with os.fdopen(fd, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            return path
-        except Exception as e:
-            logger.error(f"Failed to download image: {e}")
-            raise
+                response = requests.get(url, stream=True)
+                response.raise_for_status()
+                
+                # Create temp file
+                fd, temp_path = tempfile.mkstemp(suffix=".png")
+                with os.fdopen(fd, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                
+                # Upload to OSS
+                if uploader.is_configured:
+                    object_key = uploader.upload_file(temp_path, sub_path="temp/video_input")
+                    if object_key:
+                        logger.info(f"Uploaded downloaded video input to OSS: {object_key}")
+                        # Clean up temp file
+                        try:
+                            os.unlink(temp_path)
+                        except:
+                            pass
+                        return object_key
+                
+                # Fallback: return temp path
+                return temp_path
+            except Exception as e:
+                logger.error(f"Failed to download image from URL: {e}")
+                raise
+        
+        # Fallback: return original url
+        return url
     def select_video_for_frame(self, script_id: str, frame_id: str, video_id: str) -> Script:
         """Step 5a: Select a video variant for a frame."""
         script = self.scripts.get(script_id)
