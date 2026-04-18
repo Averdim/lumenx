@@ -741,6 +741,7 @@ CRITICAL STYLE GUIDELINES:
         entities_json: Dict[str, Any],
         llm_model: Optional[str] = None,
         llm_backend: Optional[str] = None,
+        storyboard_planning: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Analyzes script text and generates storyboard frames using Prompt B (Storyboard Director).
@@ -767,14 +768,31 @@ Scenes:
 Props:
 {json.dumps(props_list, ensure_ascii=False, indent=2)}
 """
-        
+        planning_section = ""
+        if storyboard_planning:
+            T = float(storyboard_planning.get("episode_duration_seconds") or 0)
+            sps = int(storyboard_planning.get("seconds_per_shot") or 4)
+            sc = int(storyboard_planning.get("scene_count") or 0)
+            n0 = int(storyboard_planning.get("planned_from_time") or 0)
+            N = int(storyboard_planning.get("target_shots") or 0)
+            mid = str(storyboard_planning.get("reference_video_model_id") or "doubao-seedance-2-0-260128")
+            planning_section = f"""
+# 成片时长与条数规划（仅用于估算分镜条数；实际每条视频的秒数可在生成阶段修改，合并成片总时长以各镜实际成片为准）
+- **规划参考视频模型**：以 **Seedance 2.0**（模型 ID: `{mid}`）作为时长与条数估算的基准；这不改变你输出 JSON 的字段结构。
+- **规划假设**：每个分镜对应未来一条 AI 视频成片，且规划上按 **每镜约 {sps} 秒** 估算总时长需求（用户可能在界面中改为其他秒数）。
+- 用户输入的本集目标总时长约为 **{T:g} 秒**，按上式得到时间维度的镜数下界 ceil({T:g}/{sps}) = **{n0}**。
+- 当前剧本已关联 **{sc}** 个场景实体；分镜条数应不少于场景数，故请输出 **约 {N} 条**分镜（允许 **±1～2 条**的合理浮动）。
+- 请在**完整覆盖剧本**的前提下，使分镜条数尽量接近 **{N}**，并仍遵守下文「视觉节拍拆解」与单一动作等规则。
+
+"""
+
         system_prompt = f"""
 # 角色
 你是一名电影级的分镜师（Storyboard Artist）和导演。你的任务是将剧本文本拆解为可供 AI 视频模型生成的一系列精细分镜帧。
 
 # 任务目标
 不仅仅是提取文本，而是要进行**视觉化拆解**。你需要将剧本中的文字转化为一系列连续的、单一动作的视觉画面。
-
+{planning_section}
 # 剧本格式说明
 剧本遵循以下格式：
 - **场景标题行**: `1-1 地点名称 [时间] [内/外]` 

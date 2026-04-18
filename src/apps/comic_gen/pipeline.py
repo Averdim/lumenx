@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Optional, Tuple
 import json
+import math
 import os
 import re
 import time
@@ -862,7 +863,12 @@ class ComicGenPipeline:
 
     # === STORYBOARD DRAMATIZATION v2 ===
 
-    def analyze_text_to_frames(self, script_id: str, text: str) -> Script:
+    def analyze_text_to_frames(
+        self,
+        script_id: str,
+        text: str,
+        episode_duration_seconds: Optional[float] = None,
+    ) -> Script:
         """
         Analyzes script text and generates storyboard frames using LLM.
         Replaces existing frames with newly generated ones.
@@ -890,8 +896,30 @@ class ComicGenPipeline:
         series = self.series_store.get(script.series_id) if script.series_id else None
         llm_model = self.get_effective_llm_model(script, series)
         llm_backend = self.get_effective_llm_backend(script, series)
+
+        # Optional: derive target shot count from episode length (planning: Seedance 2.0, 4s/shot in Prompt B)
+        storyboard_planning: Optional[Dict[str, Any]] = None
+        scene_count = len(all_scenes)
+        _PLAN_SECONDS_PER_SHOT = 4
+        if episode_duration_seconds is not None and float(episode_duration_seconds) > 0:
+            T = float(episode_duration_seconds)
+            planned_from_time = max(1, math.ceil(T / _PLAN_SECONDS_PER_SHOT))
+            target_shots = max(planned_from_time, scene_count)
+            storyboard_planning = {
+                "episode_duration_seconds": T,
+                "seconds_per_shot": _PLAN_SECONDS_PER_SHOT,
+                "scene_count": scene_count,
+                "planned_from_time": planned_from_time,
+                "target_shots": target_shots,
+                "reference_video_model_id": "doubao-seedance-2-0-260128",
+            }
+
         raw_frames = self.script_processor.analyze_to_storyboard(
-            text, entities_json, llm_model=llm_model, llm_backend=llm_backend
+            text,
+            entities_json,
+            llm_model=llm_model,
+            llm_backend=llm_backend,
+            storyboard_planning=storyboard_planning,
         )
 
         if not raw_frames:

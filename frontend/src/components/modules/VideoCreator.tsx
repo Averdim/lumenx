@@ -20,6 +20,7 @@ import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, VideoTask } from "@/lib/api";
 import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
 import PromptBuilder, { PromptSegment, PromptBuilderRef } from "./PromptBuilder";
+import R2VStoryboardPanel from "./R2VStoryboardPanel";
 import { SEEDANCE_20_MODEL_ID, type VideoParams } from "@/store/projectStore";
 
 interface VideoCreatorProps {
@@ -73,13 +74,9 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
         return parts.filter(p => p).join(', ');
     };
 
-    const [selectedReferenceVideos, setSelectedReferenceVideos] = useState<string[]>([]); // New state for R2V
     const [uploadingPaths, setUploadingPaths] = useState<Record<string, string>>({}); // Map blobUrl -> serverUrl
     const [activeTab, setActiveTab] = useState<"storyboard" | "upload">("storyboard");
 
-    // R2V Cast Slots: 3 slots for reference videos
-    const [castSlots, setCastSlots] = useState<{ url: string; name: string }[]>([]);
-    const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null); // Selected frame for R2V
     const [generationMode, setGenerationMode] = useState<"i2v" | "r2v">("i2v"); // Local mode state
     const [extractingFrameId, setExtractingFrameId] = useState<string | null>(null);
 
@@ -191,22 +188,11 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
     const handlePolish = async (feedback: string = "") => {
         const draftPrompt = feedback ? (polishedPrompt?.en || prompt) : prompt;
         if (!draftPrompt) return;
+        if (generationMode === "r2v") return;
         setIsPolishing(true);
         try {
-            let res;
             const scriptId = currentProject?.id || "";
-            if (generationMode === 'r2v') {
-                // R2V mode: use R2V-specific polish with slot info
-                const slotInfo = castSlots
-                    .filter(slot => slot.url)
-                    .map((slot) => ({
-                        description: slot.name || 'Unknown character'
-                    }));
-                res = await api.polishR2VPrompt(draftPrompt, slotInfo, feedback, scriptId);
-            } else {
-                // I2V mode: use video polish
-                res = await api.polishVideoPrompt(draftPrompt, feedback, scriptId);
-            }
+            const res = await api.polishVideoPrompt(draftPrompt, feedback, scriptId);
             if (res.prompt_cn && res.prompt_en) {
                 setPolishedPrompt({ cn: res.prompt_cn, en: res.prompt_en });
                 setFeedbackText("");
@@ -278,67 +264,8 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
         setRefUrls(refUrls.filter((_, i) => i !== index));
     };
 
-    // R2V: Handle Reference Video Selection
-    const handleReferenceVideoSelect = (videoUrl: string) => {
-        if (selectedReferenceVideos.includes(videoUrl)) {
-            setSelectedReferenceVideos(prev => prev.filter(v => v !== videoUrl));
-        } else {
-            if (selectedReferenceVideos.length >= 3) {
-                alert("最多选择 3 个参考视频");
-                return;
-            }
-            setSelectedReferenceVideos(prev => [...prev, videoUrl]);
-        }
-    };
-
-    // R2V: Handle Cast Slot Selection
-    const handleCastSlotSelect = (slotIndex: number, video: { url: string; name: string }) => {
-        setCastSlots(prev => {
-            const newSlots = [...prev];
-            // Ensure array is long enough
-            while (newSlots.length <= slotIndex) {
-                newSlots.push({ url: '', name: '' });
-            }
-            newSlots[slotIndex] = video;
-            return newSlots;
-        });
-    };
-
-    // R2V: Clear Cast Slot
-    const handleClearCastSlot = (slotIndex: number) => {
-        setCastSlots(prev => {
-            const newSlots = [...prev];
-            if (newSlots[slotIndex]) {
-                newSlots[slotIndex] = { url: '', name: '' };
-            }
-            return newSlots;
-        });
-    };
-
-    // R2V: Handle Frame Selection (for description)
-    const handleR2VFrameSelect = (frame: any) => {
-        setSelectedFrameId(frame.id);
-        // Auto-fill prompt with frame description
-        let newPrompt = frame.action_description || frame.image_prompt || "";
-        if (frame.dialogue) {
-            newPrompt += ` Dialogue: ${frame.dialogue}`;
-        }
-        setSegments([{ type: "text", value: newPrompt, id: `frame-${frame.id}` }]);
-    };
-
-    // Insert character into prompt at cursor position
-    const insertCharacter = (slotIndex: number) => {
-        const slot = castSlots[slotIndex];
-        if (!slot?.url) return;
-
-        // Find video to get thumbnail
-        const video = availableReferenceVideos.find(v => v.url === slot.url);
-        const thumbnail = video?.thumbnail ? getAssetUrl(video.thumbnail) : undefined;
-
-        promptBuilderRef.current?.insertCharacter(slotIndex, slot.name, thumbnail);
-    };
-
     const handleSubmit = async () => {
+        if (generationMode === "r2v") return;
         if (generationMode === "i2v") {
             if (!prompt || !currentProject) return;
             for (const img of refUrls) {
@@ -365,14 +292,9 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
             } else if (refUrls.length === 0) {
                 return;
             }
-        } else {
-            const filledSlots = castSlots.filter((s) => s.url);
-            if (filledSlots.length === 0) {
-                alert("R2V 模式请至少填充一个角色槽位 (@Ref_A)");
-                return;
-            }
-            if (!prompt || !currentProject) return;
         }
+
+        if (!currentProject) return;
 
         setIsSubmitting(true);
         try {
@@ -466,10 +388,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
 
             const optimisticTasks: VideoTask[] = [];
 
-            let itemsToProcess = refUrls;
-            if (generationMode === "r2v" && refUrls.length === 0) {
-                itemsToProcess = [""];
-            }
+            const itemsToProcess = refUrls;
 
             itemsToProcess.forEach((img, idx) => {
                 let displayUrl = img;
@@ -479,18 +398,11 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                     displayUrl = img;
                 }
 
-                // Determine model based on generation mode
-                const actualModel = generationMode === 'r2v' ? 'wan2.6-r2v' : params.model;
-                const referenceVideos = generationMode === 'r2v'
-                    ? castSlots.filter(s => s.url).map(s => s.url)
-                    : undefined;
-
-                // Create batch_size tasks for each image
                 for (let i = 0; i < params.batchSize; i++) {
                     optimisticTasks.push({
                         id: `temp-${Date.now()}-${idx}-${i}`,
                         project_id: currentProject.id,
-                        image_url: displayUrl, // Might be empty string for R2V
+                        image_url: displayUrl,
                         prompt: finalPrompt,
                         status: "pending",
                         video_url: undefined,
@@ -501,10 +413,10 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                         audio_url: params.audioUrl,
                         prompt_extend: params.promptExtend,
                         negative_prompt: params.negativePrompt,
-                        model: actualModel,
+                        model: params.model,
                         created_at: Date.now() / 1000,
-                        generation_mode: generationMode,
-                        reference_video_urls: referenceVideos
+                        generation_mode: "i2v",
+                        reference_video_urls: [],
                     });
                 }
             });
@@ -530,33 +442,16 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                     finalImageUrl = img.replace(`${API_URL}/files/`, "");
                 }
 
-                // Find frame ID - use selectedFrameId directly for R2V mode
-                let frameId: string | undefined;
-                if (generationMode === 'r2v') {
-                    // R2V mode: use the explicitly selected frame
-                    frameId = selectedFrameId || undefined;
-                } else {
-                    // I2V mode: find frame by matching image URL (check rendered_image_url first, then image_url)
-                    const frame = currentProject?.frames?.find((f: any) =>
-                        (f.rendered_image_url || f.image_url) === img ||
-                        f.image_url === img ||
-                        `${API_URL}/files/${f.image_url}` === img
-                    );
-                    frameId = frame ? frame.id : undefined;
-                }
-
-                // Determine model based on generation mode
-                // R2V mode uses wan2.6-r2v, I2V uses selected model
-                const actualModel = generationMode === 'r2v' ? 'wan2.6-r2v' : params.model;
-
-                // Get reference video URLs from cast slots for R2V
-                const referenceVideos = generationMode === 'r2v'
-                    ? castSlots.filter(s => s.url).map(s => s.url)
-                    : [];
+                const frame = currentProject?.frames?.find((f: any) =>
+                    (f.rendered_image_url || f.image_url) === img ||
+                    f.image_url === img ||
+                    `${API_URL}/files/${f.image_url}` === img
+                );
+                const frameId = frame ? frame.id : undefined;
 
                 await api.createVideoTask(
                     currentProject.id,
-                    finalImageUrl, // Can be empty string
+                    finalImageUrl,
                     finalPrompt,
                     params.duration,
                     params.seed,
@@ -566,11 +461,11 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                     params.promptExtend,
                     params.negativePrompt,
                     params.batchSize,
-                    actualModel,  // Use computed model
+                    params.model,
                     frameId,
                     params.shotType,
-                    generationMode,  // Use local state
-                    referenceVideos,  // Use cast slots
+                    "i2v",
+                    [],
                     // Kling params
                     params.mode,
                     params.sound,
@@ -605,13 +500,13 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
     // Keyboard shortcut
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.ctrlKey && e.key === "Enter") {
+            if (e.ctrlKey && e.key === "Enter" && generationMode === "i2v") {
                 handleSubmit();
             }
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [refUrls, prompt, currentProject, params, selectedReferenceVideos, uploadingPaths, generationMode]);
+    }, [refUrls, prompt, currentProject, params, uploadingPaths, generationMode]);
 
     // Available assets for drag/drop or selection
     const availableAssets = currentProject ? [
@@ -624,69 +519,6 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
             title: s.name
         }))
     ].filter(a => a.url) : [];
-
-    // Available Reference Videos (for R2V)
-    const availableReferenceVideos = currentProject ? [
-        // Character asset video variants (full_body and headshot)
-        ...currentProject.characters.flatMap((c: any) => {
-            const variants = [];
-            // Full body video variants
-            if (c.full_body?.video_variants?.length) {
-                variants.push(...c.full_body.video_variants.map((v: any) => ({
-                    url: v.url,
-                    thumbnail: c.full_body?.selected_image_id
-                        ? (c.full_body.image_variants?.find((img: any) => img.id === c.full_body.selected_image_id)?.url || c.full_body_image_url)
-                        : c.full_body_image_url,
-                    title: `${c.name} - Full Body Motion Reference`,
-                    assetName: c.name,
-                    type: 'character_full_body'
-                })));
-            }
-            // Headshot video variants
-            if (c.head_shot?.video_variants?.length) {
-                variants.push(...c.head_shot.video_variants.map((v: any) => ({
-                    url: v.url,
-                    thumbnail: c.head_shot?.selected_image_id
-                        ? (c.head_shot.image_variants?.find((img: any) => img.id === c.head_shot.selected_image_id)?.url || c.headshot_image_url)
-                        : c.headshot_image_url,
-                    title: `${c.name} - Headshot Motion Reference`,
-                    assetName: c.name,
-                    type: 'character_headshot'
-                })));
-            }
-            return variants;
-        }),
-        // Character legacy video assets
-        ...currentProject.characters.flatMap((c: any) =>
-            (c.video_assets || []).map((v: any) => ({
-                url: v.video_url,
-                thumbnail: v.image_url,
-                title: `${c.name} - Video`,
-                assetName: c.name,
-                type: 'character_legacy'
-            }))
-        ),
-        // Scene video assets
-        ...currentProject.scenes.flatMap((s: any) =>
-            (s.video_assets || []).map((v: any) => ({
-                url: v.video_url,
-                thumbnail: v.image_url,
-                title: `${s.name} - Video`,
-                assetName: s.name,
-                type: 'scene'
-            }))
-        ),
-        // Prop video assets
-        ...currentProject.props.flatMap((p: any) =>
-            (p.video_assets || []).map((v: any) => ({
-                url: v.video_url,
-                thumbnail: v.image_url,
-                title: `${p.name} - Video`,
-                assetName: p.name,
-                type: 'prop'
-            }))
-        )
-    ].filter(v => v.url && v.url !== 'null' && v.url !== 'undefined') : [];
 
     return (
         <div className="h-full flex flex-col relative min-h-0">
@@ -933,164 +765,28 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                         </div>
                     )}
 
-                    {/* === R2V MODE: Cast Slots + Frame Description === */}
-                    {generationMode === 'r2v' && (
-                        <div className="space-y-6">
-                            {/* Frame Description Cards */}
-                            <div className="space-y-3">
-                                <label className="text-sm font-medium text-gray-300">选择分镜 (Select Frame)</label>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[200px] overflow-y-auto custom-scrollbar pr-2">
-                                    {currentProject?.frames && currentProject.frames.length > 0 ? (
-                                        currentProject.frames.map((frame: any) => (
-                                            <div
-                                                key={frame.id}
-                                                onClick={() => handleR2VFrameSelect(frame)}
-                                                className={`p-3 rounded-lg border cursor-pointer transition-all ${selectedFrameId === frame.id
-                                                    ? "border-purple-500 bg-purple-500/10 ring-2 ring-purple-500/30"
-                                                    : "border-white/10 bg-black/20 hover:border-white/30"
-                                                    }`}
-                                            >
-                                                <div className="flex items-start gap-3">
-                                                    {/* Frame thumbnail */}
-                                                    <div className="w-16 h-10 rounded overflow-hidden flex-shrink-0 bg-black/40">
-                                                        {frame.image_url ? (
-                                                            <img
-                                                                src={getAssetUrlWithTimestamp(frame.image_url, frame.updated_at)}
-                                                                alt=""
-                                                                className="w-full h-full object-cover"
-                                                            />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center text-gray-600">
-                                                                <Layout size={14} />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    {/* Frame description */}
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-xs text-gray-400 mb-1">#{frame.id.slice(0, 6)}</p>
-                                                        <p className="text-xs text-gray-300 line-clamp-2">
-                                                            {frame.action_description || frame.image_prompt || '暂无描述'}
-                                                        </p>
-                                                        {frame.dialogue && (
-                                                            <p className="text-[10px] text-purple-400 mt-1 italic line-clamp-1">
-                                                                “{frame.dialogue}”
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    {/* Selected indicator */}
-                                                    {selectedFrameId === frame.id && (
-                                                        <div className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center flex-shrink-0">
-                                                            <Check size={12} className="text-white" />
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div className="col-span-2 flex flex-col items-center justify-center h-[100px] text-gray-500 gap-2">
-                                            <Layout size={24} className="opacity-20" />
-                                            <p className="text-xs">无分镜数据，请先在 Storyboard 阶段生成分镜</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Cast Slots (卡司槽位) */}
-                            <div className="space-y-3">
-                                <label className="text-sm font-medium text-gray-300">卡司槽位 (Cast Slots)</label>
-                                <div className="grid grid-cols-3 gap-4">
-                                    {[0, 1, 2].map((slotIndex) => {
-                                        const slot = castSlots[slotIndex];
-                                        const slotLabel = `@Ref_${String.fromCharCode(65 + slotIndex)}`; // @Ref_A, @Ref_B, @Ref_C
-                                        const slotTitle = slotIndex === 0 ? '主角' : '配角';
-                                        const video = slot?.url ? availableReferenceVideos.find(v => v.url === slot.url) : null;
-
-                                        return (
-                                            <div
-                                                key={slotIndex}
-                                                className={`relative rounded-xl border-2 border-dashed transition-all ${slot?.url
-                                                    ? "border-purple-500 bg-purple-500/10"
-                                                    : "border-white/20 bg-black/20 hover:border-white/40"
-                                                    }`}
-                                            >
-                                                {/* Slot Header */}
-                                                <div className="absolute top-2 left-2 z-10">
-                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-600 text-white font-bold">
-                                                        角色{slotIndex + 1}
-                                                    </span>
-                                                </div>
-
-                                                {slot?.url ? (
-                                                    /* Filled Slot */
-                                                    <div className="aspect-video relative">
-                                                        <img
-                                                            src={getAssetUrl(video?.thumbnail || '')}
-                                                            alt={slot.name}
-                                                            className="w-full h-full object-cover rounded-xl"
-                                                        />
-                                                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 rounded-b-xl">
-                                                            <p className="text-xs text-white font-medium truncate">{slot.name}</p>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => handleClearCastSlot(slotIndex)}
-                                                            className="absolute top-2 right-2 p-1 bg-black/60 rounded-full text-white hover:bg-red-500 transition-colors"
-                                                        >
-                                                            <X size={12} />
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    /* Empty Slot */
-                                                    <div className="aspect-video flex flex-col items-center justify-center p-4">
-                                                        <p className="text-xs text-gray-400 mb-2">{slotTitle}</p>
-                                                        <select
-                                                            className="w-full text-xs bg-black/40 border border-white/20 rounded-lg px-2 py-1.5 text-gray-300 focus:border-purple-500 focus:outline-none"
-                                                            value=""
-                                                            onChange={(e) => {
-                                                                const selectedVideo = availableReferenceVideos.find(v => v.url === e.target.value);
-                                                                if (selectedVideo) {
-                                                                    handleCastSlotSelect(slotIndex, { url: selectedVideo.url, name: selectedVideo.assetName });
-                                                                }
-                                                            }}
-                                                        >
-                                                            <option value="">选择参考视频...</option>
-                                                            {availableReferenceVideos.map((v, i) => (
-                                                                <option key={i} value={v.url}>{v.assetName} - {v.type}</option>
-                                                            ))}
-                                                        </select>
-                                                        {slotIndex === 0 && (
-                                                            <p className="text-[10px] text-amber-400 mt-2">必填</p>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                                {availableReferenceVideos.length === 0 && (
-                                    <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-                                        ⚠️ 无可用的参考视频。请先在 Assets 阶段为角色/场景生成 Motion Reference 视频。
-                                    </p>
-                                )}
-                            </div>
-                        </div>
+                    {generationMode === "r2v" && (
+                        <R2VStoryboardPanel
+                            onTaskCreated={onTaskCreated}
+                            params={params}
+                            onParamsChange={onParamsChange}
+                        />
                     )}
 
-
-                    {/* 2. Prompt Input */}
+                    {/* 2. Prompt Input (I2V only; R2V uses R2VStoryboardPanel) */}
+                    {generationMode === "i2v" && (
                     <div className="space-y-2">
                         <div className="flex justify-between items-center">
                             <label className="text-sm font-medium text-gray-300">提示词 (Prompt)</label>
                             <div className="flex items-center gap-2">
-                                {generationMode === 'i2v' && (
-                                    <div className="relative">
-                                        <button
-                                            onClick={() => promptBuilderRef.current?.insertCamera()}
-                                            className="text-xs flex items-center gap-1 px-2 py-1 rounded transition-colors text-gray-400 hover:text-white hover:bg-white/5"
-                                        >
-                                            <Video size={12} /> 运镜
-                                        </button>
-                                    </div>
-                                )}
+                                <div className="relative">
+                                    <button
+                                        onClick={() => promptBuilderRef.current?.insertCamera()}
+                                        className="text-xs flex items-center gap-1 px-2 py-1 rounded transition-colors text-gray-400 hover:text-white hover:bg-white/5"
+                                    >
+                                        <Video size={12} /> 运镜
+                                    </button>
+                                </div>
                                 <button
                                     onClick={() => handlePolish()}
                                     disabled={isPolishing || !prompt}
@@ -1109,43 +805,13 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                             </div>
                         </div>
 
-                        {/* Character Insert Shortcuts (R2V Mode Only) */}
-                        {generationMode === 'r2v' && (
-                            <div className="flex gap-2 flex-wrap">
-                                {[0, 1, 2].map((idx) => {
-                                    const slot = castSlots[idx];
-                                    const isActive = slot?.url;
-                                    const video = isActive ? availableReferenceVideos.find(v => v.url === slot.url) : null;
-                                    return (
-                                        <button
-                                            key={idx}
-                                            onClick={() => insertCharacter(idx)}
-                                            disabled={!isActive}
-                                            className={`text-xs px-2 py-1 rounded-lg border transition-all flex items-center gap-1.5 ${isActive
-                                                ? "border-purple-500/50 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20"
-                                                : "border-white/10 bg-white/5 text-gray-500 cursor-not-allowed"
-                                                }`}
-                                        >
-                                            {video?.thumbnail ? (
-                                                <img src={getAssetUrl(video.thumbnail)} alt="" className="w-4 h-4 rounded-full object-cover" />
-                                            ) : (
-                                                <span className="w-4 h-4 rounded-full bg-purple-500/30 flex items-center justify-center text-[10px]">+</span>
-                                            )}
-                                            <span>插入 {slot?.name || `角色${idx + 1}`}</span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
-
                         <div className="relative">
                             <PromptBuilder
                                 ref={promptBuilderRef}
                                 segments={segments}
                                 onChange={setSegments}
-                                placeholder={generationMode === 'r2v'
-                                    ? "输入提示词... \n插入角色格式: [character1:名称]\n插入运镜格式: (camera: 运镜指令)"
-                                    : "输入提示词，描述画面内容...\n插入运镜格式: (camera: 运镜指令)"
+                                placeholder={
+                                    "输入提示词，描述画面内容...\n插入运镜格式: (camera: 运镜指令)"
                                 }
                             />
                         </div>
@@ -1249,15 +915,17 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                             )}
                         </AnimatePresence>
                     </div>
+                    )}
                 </div>
             </div >
 
-            {/* 4. Fixed Action Bar */}
+            {/* 4. Fixed Action Bar (I2V only) */}
+            {generationMode === "i2v" && (
             < div className="p-6 border-t border-white/10 bg-black/40 backdrop-blur-md z-10" >
                 <div className="max-w-4xl mx-auto w-full">
                     <button
                         onClick={handleSubmit}
-                        disabled={(!prompt || isSubmitting) || (generationMode === "i2v" && refUrls.length === 0)}
+                        disabled={(!prompt || isSubmitting) || refUrls.length === 0}
                         className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all transform active:scale-[0.99] ${submitSuccess
                             ? "bg-green-500 text-white"
                             : "bg-primary hover:bg-primary/90 text-white"
@@ -1285,6 +953,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                     </div>
                 </div>
             </div >
+            )}
         </div >
     );
 }

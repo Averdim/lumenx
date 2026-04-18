@@ -14,6 +14,7 @@ import logging
 import traceback
 from .pipeline import ComicGenPipeline
 from .models import (
+    AssetGlobalPrompts,
     PromptConfig,
     ProviderBackend,
     ProviderRoutingConfig,
@@ -1035,6 +1036,9 @@ async def generate_motion_ref(script_id: str, request: GenerateMotionRefRequest,
 class AnalyzeToStoryboardRequest(BaseModel):
     """Request to analyze script text into storyboard frames."""
     text: str
+    # Optional: user-estimated episode length (seconds). Used with Prompt B to target shot count
+    # (planning assumes Seedance 2.0 + fixed seconds per shot; see pipeline + llm).
+    episode_duration_seconds: Optional[float] = None
 
 
 @app.post("/projects/{script_id}/storyboard/analyze")
@@ -1044,7 +1048,11 @@ async def analyze_to_storyboard(script_id: str, request: AnalyzeToStoryboardRequ
     Replaces existing frames with newly generated ones.
     """
     try:
-        updated_script = pipeline.analyze_text_to_frames(script_id, request.text)
+        updated_script = pipeline.analyze_text_to_frames(
+            script_id,
+            request.text,
+            episode_duration_seconds=request.episode_duration_seconds,
+        )
         return signed_response(updated_script)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1511,6 +1519,33 @@ async def update_prompt_config(script_id: str, request: UpdatePromptConfigReques
         )
         pipeline._save_data()
         return {"prompt_config": script.prompt_config.model_dump()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class UpdateAssetGlobalPromptsRequest(BaseModel):
+    character: str = ""
+    scene: str = ""
+    prop: str = ""
+
+
+@app.put("/projects/{script_id}/asset_global_prompts")
+async def update_asset_global_prompts(script_id: str, request: UpdateAssetGlobalPromptsRequest):
+    """Persist optional global prompt prefixes for character / scene / prop generation (Assets step)."""
+    try:
+        script = pipeline.get_script(script_id)
+        if not script:
+            raise HTTPException(status_code=404, detail="Project not found")
+        script.asset_global_prompts = AssetGlobalPrompts(
+            character=request.character or "",
+            scene=request.scene or "",
+            prop=request.prop or "",
+        )
+        script.updated_at = time.time()
+        pipeline._save_data()
+        return signed_response(script)
     except HTTPException:
         raise
     except Exception as e:

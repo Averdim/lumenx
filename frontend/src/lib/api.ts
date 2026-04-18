@@ -74,22 +74,51 @@ export interface VideoTask {
     seedance_i2v_mode?: string;
 }
 
+function normalizeProjectPayload(p: any) {
+    if (!p || typeof p !== "object") return p;
+    const ag = p.asset_global_prompts ?? p.assetGlobalPrompts;
+    return {
+        ...p,
+        originalText: p.original_text ?? p.originalText,
+        assetGlobalPrompts: ag
+            ? { character: ag.character ?? "", scene: ag.scene ?? "", prop: ag.prop ?? "" }
+            : { character: "", scene: "", prop: "" },
+    };
+}
+
+/** Prepend project-level Assets global prompt for character / scene / prop image or motion generation. */
+export function mergeAssetGlobalPrompt(
+    assetType: string,
+    userPrompt: string,
+    prompts?: { character: string; scene: string; prop: string } | null
+): string {
+    const p = prompts ?? { character: "", scene: "", prop: "" };
+    const key =
+        assetType === "character" ? "character" : assetType === "scene" ? "scene" : assetType === "prop" ? "prop" : null;
+    if (!key) return userPrompt;
+    const prefix = String((p as Record<string, string>)[key] ?? "").trim();
+    const rest = (userPrompt || "").trim();
+    if (!prefix) return userPrompt;
+    if (!rest) return prefix;
+    return `${prefix}\n\n${rest}`;
+}
+
 export const api = {
     createProject: async (title: string, text: string, skipAnalysis: boolean = false) => {
         const res = await axios.post(`${API_URL}/projects`, { title, text }, {
             params: { skip_analysis: skipAnalysis }
         });
-        return { ...res.data, originalText: res.data.original_text };
+        return normalizeProjectPayload(res.data);
     },
 
     getProjects: async () => {
         const res = await axios.get(`${API_URL}/projects/`);
-        return res.data.map((p: any) => ({ ...p, originalText: p.original_text }));
+        return res.data.map((p: any) => normalizeProjectPayload(p));
     },
 
     getProject: async (scriptId: string) => {
         const res = await axios.get(`${API_URL}/projects/${scriptId}`);
-        return { ...res.data, originalText: res.data.original_text };
+        return normalizeProjectPayload(res.data);
     },
 
     deleteProject: async (scriptId: string) => {
@@ -99,12 +128,20 @@ export const api = {
 
     reparseProject: async (scriptId: string, text: string) => {
         const res = await axios.put(`${API_URL}/projects/${scriptId}/reparse`, { text });
-        return { ...res.data, originalText: res.data.original_text };
+        return normalizeProjectPayload(res.data);
     },
 
     syncDescriptions: async (scriptId: string) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/sync_descriptions`);
-        return res.data;
+        return normalizeProjectPayload(res.data);
+    },
+
+    updateAssetGlobalPrompts: async (
+        scriptId: string,
+        prompts: { character: string; scene: string; prop: string }
+    ) => {
+        const res = await axios.put(`${API_URL}/projects/${scriptId}/asset_global_prompts`, prompts);
+        return normalizeProjectPayload(res.data);
     },
 
     generateAssets: async (scriptId: string) => {
@@ -474,10 +511,19 @@ export const api = {
      * Analyzes script text and generates storyboard frames using AI.
      * Replaces existing frames with newly generated ones.
      */
-    analyzeToStoryboard: async (scriptId: string, text: string) => {
-        const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/analyze`, {
-            text: text
-        });
+    analyzeToStoryboard: async (
+        scriptId: string,
+        text: string,
+        options?: { episode_duration_seconds?: number }
+    ) => {
+        const body: Record<string, unknown> = { text };
+        if (
+            options?.episode_duration_seconds != null &&
+            options.episode_duration_seconds > 0
+        ) {
+            body.episode_duration_seconds = options.episode_duration_seconds;
+        }
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/analyze`, body);
         return res.data;
     },
 

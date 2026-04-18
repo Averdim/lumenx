@@ -2,9 +2,27 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Paintbrush, User, MapPin, Box, Lock, Unlock, RefreshCw, Upload, Image as ImageIcon, X, Check, Settings, ChevronRight, Trash2, Plus, Link as LinkIcon } from "lucide-react";
+import {
+    Paintbrush,
+    User,
+    MapPin,
+    Box,
+    Lock,
+    Unlock,
+    RefreshCw,
+    Upload,
+    Image as ImageIcon,
+    X,
+    Check,
+    Settings,
+    ChevronRight,
+    Trash2,
+    Plus,
+    Link as LinkIcon,
+    MessageSquareText,
+} from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
-import { api, API_URL, crudApi } from "@/lib/api";
+import { api, API_URL, crudApi, mergeAssetGlobalPrompt } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
 import CharacterWorkbench from "./CharacterWorkbench";
 import CharacterDetailModal, { type CharacterDetailModalAssetType } from "./CharacterDetailModal";
@@ -34,6 +52,9 @@ export default function ConsistencyVault() {
     // Upload modal state
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [uploadTarget, setUploadTarget] = useState<{ id: string; type: string; name: string; description: string } | null>(null);
+
+    const [isAssetGlobalPromptModalOpen, setIsAssetGlobalPromptModalOpen] = useState(false);
+    const [assetGlobalDraft, setAssetGlobalDraft] = useState({ character: "", scene: "", prop: "" });
 
     // Derive selected asset from currentProject
     const selectedAsset = currentProject ? (() => {
@@ -79,6 +100,8 @@ export default function ConsistencyVault() {
             console.log("[handleGenerate] Starting asset generation...");
 
             // Call API - now returns immediately with task_id
+            const mergedPrompt = mergeAssetGlobalPrompt(type, prompt, currentProject.assetGlobalPrompts);
+
             const response = await api.generateAsset(
                 currentProject.id,
                 assetId,
@@ -86,7 +109,7 @@ export default function ConsistencyVault() {
                 "ArtDirection",
                 stylePrompt,
                 generationType,
-                prompt,
+                mergedPrompt,
                 applyStyle,
                 negativePrompt,
                 batchSize,
@@ -231,12 +254,13 @@ export default function ConsistencyVault() {
         }
 
         try {
+            const mergedVideoPrompt = mergeAssetGlobalPrompt(type, prompt, currentProject.assetGlobalPrompts);
             console.log(`[handleGenerateVideo] Starting ${generationType} generation for asset ${type}, type: ${finalAssetType}...`);
             const response = await api.generateMotionRef(
                 currentProject.id,
                 assetId,
                 finalAssetType,
-                prompt,
+                mergedVideoPrompt,
                 undefined, // audioUrl
                 duration
             );
@@ -309,7 +333,27 @@ export default function ConsistencyVault() {
         }
     };
 
-    // Sync descriptions from Script module to Assets
+    const openAssetGlobalPromptModal = () => {
+        if (!currentProject) return;
+        setAssetGlobalDraft({
+            character: currentProject.assetGlobalPrompts?.character ?? "",
+            scene: currentProject.assetGlobalPrompts?.scene ?? "",
+            prop: currentProject.assetGlobalPrompts?.prop ?? "",
+        });
+        setIsAssetGlobalPromptModalOpen(true);
+    };
+
+    const saveAssetGlobalPrompts = async () => {
+        if (!currentProject) return;
+        try {
+            const updated = await api.updateAssetGlobalPrompts(currentProject.id, assetGlobalDraft);
+            updateProject(currentProject.id, updated);
+            setIsAssetGlobalPromptModalOpen(false);
+        } catch (e: any) {
+            alert(e?.response?.data?.detail || e?.message || "保存失败");
+        }
+    };
+
     const handleSyncDescriptions = async () => {
         if (!currentProject) return;
 
@@ -358,32 +402,44 @@ export default function ConsistencyVault() {
     return (
         <div className="flex flex-col h-full text-white">
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-white/10 bg-black/20">
-                <div className="flex gap-2 bg-black/40 p-1 rounded-xl border border-white/5">
-                    <TabButton
-                        active={activeTab === "character"}
-                        onClick={() => setActiveTab("character")}
-                        icon={<User size={18} />}
-                        label="Characters"
-                        count={currentProject?.characters?.length || 0}
-                    />
-                    <TabButton
-                        active={activeTab === "scene"}
-                        onClick={() => setActiveTab("scene")}
-                        icon={<MapPin size={18} />}
-                        label="Scenes"
-                        count={currentProject?.scenes?.length || 0}
-                    />
-                    <TabButton
-                        active={activeTab === "prop"}
-                        onClick={() => setActiveTab("prop")}
-                        icon={<Box size={18} />}
-                        label="Props"
-                        count={currentProject?.props?.length || 0}
-                    />
+            <div className="flex items-center justify-between p-6 border-b border-white/10 bg-black/20 gap-4 flex-wrap">
+                <div className="flex items-center gap-3 min-w-0 flex-1 flex-wrap">
+                    <div className="flex gap-2 bg-black/40 p-1 rounded-xl border border-white/5">
+                        <TabButton
+                            active={activeTab === "character"}
+                            onClick={() => setActiveTab("character")}
+                            icon={<User size={18} />}
+                            label="Characters"
+                            count={currentProject?.characters?.length || 0}
+                        />
+                        <TabButton
+                            active={activeTab === "scene"}
+                            onClick={() => setActiveTab("scene")}
+                            icon={<MapPin size={18} />}
+                            label="Scenes"
+                            count={currentProject?.scenes?.length || 0}
+                        />
+                        <TabButton
+                            active={activeTab === "prop"}
+                            onClick={() => setActiveTab("prop")}
+                            icon={<Box size={18} />}
+                            label="Props"
+                            count={currentProject?.props?.length || 0}
+                        />
+                    </div>
+                    <button
+                        type="button"
+                        onClick={openAssetGlobalPromptModal}
+                        disabled={!currentProject}
+                        className="shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 text-sm text-amber-100 disabled:opacity-40 transition-colors"
+                        title="编辑人物、场景、道具的全局提示词；生成时会自动合并到对应类型的提示词前"
+                    >
+                        <MessageSquareText size={18} className="text-amber-300 shrink-0" />
+                        <span className="font-semibold">全局提示词</span>
+                    </button>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0">
                     <button
                         onClick={handleSyncDescriptions}
                         className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
@@ -512,7 +568,90 @@ export default function ConsistencyVault() {
                     onUploadComplete={handleUploadComplete}
                 />
             )}
-        </div >
+
+            <AnimatePresence>
+                {isAssetGlobalPromptModalOpen && currentProject ? (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4"
+                        onClick={() => setIsAssetGlobalPromptModalOpen(false)}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.96 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.96 }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#141418] shadow-2xl p-5 space-y-4"
+                        >
+                            <div className="flex items-center justify-between gap-2">
+                                <h3 className="text-base font-bold text-white">全局提示词</h3>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAssetGlobalPromptModalOpen(false)}
+                                    className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white"
+                                    aria-label="关闭"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                            <p className="text-xs text-gray-500 leading-relaxed">
+                                以下为可选前缀。生成人物、场景或道具图片 / 参考视频时，对应栏内容会自动合并到该次提示词前（可为空）。
+                            </p>
+                            <div className="space-y-3">
+                                <label className="block space-y-1.5">
+                                    <span className="text-xs font-medium text-gray-300">人物</span>
+                                    <textarea
+                                        value={assetGlobalDraft.character}
+                                        onChange={(e) => setAssetGlobalDraft((d) => ({ ...d, character: e.target.value }))}
+                                        rows={3}
+                                        placeholder="例如：统一画风、人种、时代感…"
+                                        className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-purple-500/50 focus:outline-none resize-y min-h-[4.5rem]"
+                                    />
+                                </label>
+                                <label className="block space-y-1.5">
+                                    <span className="text-xs font-medium text-gray-300">场景</span>
+                                    <textarea
+                                        value={assetGlobalDraft.scene}
+                                        onChange={(e) => setAssetGlobalDraft((d) => ({ ...d, scene: e.target.value }))}
+                                        rows={3}
+                                        placeholder="例如：光影、镜头语言、氛围…"
+                                        className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-purple-500/50 focus:outline-none resize-y min-h-[4.5rem]"
+                                    />
+                                </label>
+                                <label className="block space-y-1.5">
+                                    <span className="text-xs font-medium text-gray-300">道具</span>
+                                    <textarea
+                                        value={assetGlobalDraft.prop}
+                                        onChange={(e) => setAssetGlobalDraft((d) => ({ ...d, prop: e.target.value }))}
+                                        rows={3}
+                                        placeholder="例如：材质、做旧程度、比例…"
+                                        className="w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-purple-500/50 focus:outline-none resize-y min-h-[4.5rem]"
+                                    />
+                                </label>
+                            </div>
+                            <div className="flex justify-end gap-2 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAssetGlobalPromptModalOpen(false)}
+                                    className="px-4 py-2 rounded-lg text-sm text-gray-300 hover:bg-white/10 border border-transparent"
+                                >
+                                    取消
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void saveAssetGlobalPrompts()}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium bg-primary hover:bg-primary/90 text-white"
+                                >
+                                    保存
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                ) : null}
+            </AnimatePresence>
+        </div>
     );
 }
 

@@ -23,7 +23,7 @@ import {
     Users,
 } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
-import { api, API_URL, crudApi } from "@/lib/api";
+import { api, API_URL, crudApi, mergeAssetGlobalPrompt, type VideoTask } from "@/lib/api";
 import { getAssetUrl, getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib/utils";
 import { buildFrameReferenceThumbnails, getSelectedVariantUrl, type FrameReferenceThumb } from "@/lib/storyboardRefs";
 import CharacterDetailModal from "./CharacterDetailModal";
@@ -34,7 +34,10 @@ import {
     I2V_MODELS,
     SEEDANCE_20_MODEL_ID,
     type SeedanceI2vMode,
+    type VideoParams,
 } from "@/store/projectStore";
+import R2VStoryboardPanel from "./R2VStoryboardPanel";
+import VideoQueue from "./VideoQueue";
 
 function normalizeImageForApi(img: string): string {
     if (!img) return img;
@@ -147,6 +150,7 @@ function FrameWorkbenchRow({
     const pending = tasksForFrame.some((t: any) => t.status === "pending" || t.status === "processing");
 
     const handleSelectVideo = async (videoId: string) => {
+        if (!videoId) return;
         try {
             await api.selectVideo(project.id, frame.id, videoId);
             const updated = await api.getProject(project.id);
@@ -381,21 +385,6 @@ function FrameWorkbenchRow({
                                 多图参考：仅使用左侧 Refs（场景 / 角色 / 道具资产图），自动附加，最多 9 张。
                             </p>
                         ) : null}
-
-                        {completed.length > 0 ? (
-                            <select
-                                className="max-w-full shrink-0 rounded border border-white/10 bg-black/50 px-2 py-1 text-[10px] text-gray-300"
-                                value={frame.selected_video_id || ""}
-                                onChange={(e) => handleSelectVideo(e.target.value)}
-                            >
-                                <option value="">选择成片</option>
-                                {completed.map((t: any) => (
-                                    <option key={t.id} value={t.id}>
-                                        {t.id.slice(0, 8)}… {t.status}
-                                    </option>
-                                ))}
-                            </select>
-                        ) : null}
                     </div>
 
                     <div className="flex h-full min-h-0 w-[min(14rem,24vw)] shrink-0 flex-col gap-1.5 border-l border-white/10 pl-2 sm:w-[14rem]">
@@ -467,6 +456,21 @@ function FrameWorkbenchRow({
                                 无成片
                             </div>
                         )}
+                        {sorted.length > 0 ? (
+                            <select
+                                className="w-full shrink-0 rounded border border-white/10 bg-black/50 px-2 py-1.5 text-[10px] text-gray-300"
+                                value={frame.selected_video_id || ""}
+                                onChange={(e) => void handleSelectVideo(e.target.value)}
+                                title="选择用于合成与预览的成片版本"
+                            >
+                                <option value="">选择成片（默认最新）</option>
+                                {sorted.map((t: any) => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.id.slice(0, 8)}… {t.status}
+                                    </option>
+                                ))}
+                            </select>
+                        ) : null}
                     </div>
                 </div>
             </div>
@@ -670,10 +674,38 @@ export default function StoryboardVideoWorkbench() {
         characterSlot?: FrameReferenceThumb["characterSlot"];
     };
     const [refAssetTarget, setRefAssetTarget] = useState<RefAssetOpenTarget | null>(null);
+    /** Minutes; empty = do not send episode duration planning to Prompt B */
+    const [episodeDurationMinutes, setEpisodeDurationMinutes] = useState("");
 
     const [rowVideoPrompts, setRowVideoPrompts] = useState<Record<string, string>>({});
     const [videoBusyByFrame, setVideoBusyByFrame] = useState<Record<string, boolean>>({});
     const [rowVideoParamsByFrameId, setRowVideoParamsByFrameId] = useState<Record<string, RowVideoParams>>({});
+
+    type StoryboardWorkbenchVideoMode = "i2v" | "r2v";
+    const [workbenchVideoMode, setWorkbenchVideoMode] = useState<StoryboardWorkbenchVideoMode>("i2v");
+    const [r2vPanelParams, setR2vPanelParams] = useState<VideoParams>(() => ({
+        resolution: "720p",
+        duration: 5,
+        seed: undefined,
+        generateAudio: true,
+        audioUrl: "",
+        promptExtend: true,
+        negativePrompt: "",
+        batchSize: 1,
+        cameraMovement: "none",
+        subjectMotion: "still",
+        model: "wan2.6-i2v",
+        shotType: "multi",
+        generationMode: "r2v",
+        referenceVideoUrls: [],
+        referenceImageUrls: [],
+        seedanceI2vMode: "first_frame",
+        mode: "std",
+        sound: false,
+        cfgScale: 0.5,
+        viduAudio: true,
+        movementAmplitude: "auto",
+    }));
 
     const frames = currentProject?.frames || [];
     const projectDefaultI2v = currentProject?.model_settings?.i2v_model || "wan2.5-i2v-preview";
@@ -692,6 +724,37 @@ export default function StoryboardVideoWorkbench() {
         });
     }, [currentProject?.id, frameIdKey, currentProject?.model_settings?.i2v_model]);
     const tasks = currentProject?.video_tasks || [];
+
+    const r2vQueueTasks = useMemo(
+        () => (tasks as VideoTask[]).filter((t) => t.generation_mode === "r2v" || t.model === "wan2.6-r2v"),
+        [tasks]
+    );
+
+    const [r2vRemixNonce, setR2vRemixNonce] = useState(0);
+    const [r2vRemixTask, setR2vRemixTask] = useState<VideoTask | null>(null);
+
+    const handleR2VQueueRemix = useCallback(
+        (task: VideoTask) => {
+            setR2vPanelParams((prev) => ({
+                ...prev,
+                duration: task.duration ?? prev.duration,
+                seed: task.seed ?? prev.seed,
+                resolution: task.resolution || prev.resolution,
+                generateAudio: task.generate_audio ?? prev.generateAudio,
+                audioUrl: task.audio_url ?? prev.audioUrl,
+                promptExtend: task.prompt_extend ?? prev.promptExtend,
+                negativePrompt: task.negative_prompt ?? prev.negativePrompt,
+                referenceVideoUrls:
+                    task.reference_video_urls && task.reference_video_urls.length > 0
+                        ? [...task.reference_video_urls]
+                        : prev.referenceVideoUrls,
+            }));
+            if (task.frame_id) setSelectedFrameId(task.frame_id);
+            setR2vRemixTask(task);
+            setR2vRemixNonce((n) => n + 1);
+        },
+        [setSelectedFrameId]
+    );
 
     useEffect(() => {
         const hasActive = tasks.some((t: any) => t.status === "pending" || t.status === "processing");
@@ -805,10 +868,31 @@ export default function StoryboardVideoWorkbench() {
         }
         setIsAnalyzing(true);
         try {
-            const updatedProject = await api.analyzeToStoryboard(currentProject.id, text);
+            const trimmed = episodeDurationMinutes.trim();
+            const minutes = trimmed === "" ? NaN : parseFloat(trimmed);
+            const episodeSeconds =
+                Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : undefined;
+
+            const updatedProject = await api.analyzeToStoryboard(currentProject.id, text, {
+                episode_duration_seconds: episodeSeconds,
+            });
             const frameCount = updatedProject.frames?.length || 0;
             if (frameCount > 0) {
                 updateProject(currentProject.id, updatedProject);
+                setRowVideoParamsByFrameId((prev) => {
+                    const next = { ...prev };
+                    for (const f of updatedProject.frames || []) {
+                        const base =
+                            prev[f.id] ?? createDefaultRowVideoParams(SEEDANCE_20_MODEL_ID);
+                        next[f.id] = {
+                            ...base,
+                            model: SEEDANCE_20_MODEL_ID,
+                            duration: 4,
+                            seedanceI2vMode: "first_frame",
+                        };
+                    }
+                    return next;
+                });
                 alert(`成功生成 ${frameCount} 个分镜帧！`);
             } else {
                 alert("AI 模型未生成有效分镜帧，请重试。");
@@ -988,6 +1072,7 @@ export default function StoryboardVideoWorkbench() {
         if (addGeneratingTask) addGeneratingTask(assetId, generationType, batchSize);
         try {
             const stylePrompt = currentProject?.art_direction?.style_config?.positive_prompt || "";
+            const mergedPrompt = mergeAssetGlobalPrompt(type, prompt, currentProject.assetGlobalPrompts);
             const response = await api.generateAsset(
                 currentProject.id,
                 assetId,
@@ -995,7 +1080,7 @@ export default function StoryboardVideoWorkbench() {
                 "ArtDirection",
                 stylePrompt,
                 generationType,
-                prompt,
+                mergedPrompt,
                 applyStyle,
                 negativePrompt,
                 batchSize,
@@ -1142,57 +1227,8 @@ export default function StoryboardVideoWorkbench() {
 
     if (!currentProject) return null;
 
-    return (
-        <div className="flex flex-col h-full text-white overflow-hidden relative">
-            <div className="flex-shrink-0 p-3 border-b border-white/10 flex items-center justify-between bg-black/20 gap-2">
-                <h3 className="font-bold text-sm flex items-center gap-2 whitespace-nowrap">
-                    <Layout size={16} className="text-primary shrink-0" />
-                    <span className="hidden sm:inline">分镜与视频</span>
-                </h3>
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <button
-                        type="button"
-                        onClick={() => setShowScriptOverlay(true)}
-                        className="flex items-center gap-1 text-[10px] sm:text-xs text-gray-400 hover:text-white px-2 py-1 rounded-lg hover:bg-white/5"
-                    >
-                        <FileText size={12} /> 脚本
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleAnalyzeToStoryboard}
-                        disabled={isAnalyzing}
-                        className="flex items-center gap-1 text-[10px] sm:text-xs bg-primary/80 hover:bg-primary px-2 py-1 rounded-lg disabled:opacity-50"
-                    >
-                        {isAnalyzing ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                        生成分镜
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setInsertIndex(0);
-                            setIsCreateDialogOpen(true);
-                        }}
-                        className="flex items-center gap-1 text-[10px] sm:text-xs px-2 py-1 rounded-lg border border-dashed border-white/20 hover:border-primary text-gray-400"
-                    >
-                        <Plus size={12} /> 开头插入
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setInsertIndex(frames.length);
-                            setIsCreateDialogOpen(true);
-                        }}
-                        className="flex items-center gap-1 text-[10px] sm:text-xs px-2 py-1 rounded-lg border border-dashed border-white/20 hover:border-primary text-gray-400"
-                    >
-                        <Plus size={12} /> 末尾插入
-                    </button>
-                    <span className="text-[10px] text-gray-500 font-mono">{frames.length} 镜</span>
-                </div>
-            </div>
-
-            <div className="flex-1 overflow-x-auto overflow-y-auto p-3">
-                <div className="flex flex-col gap-2 w-full min-w-0 max-w-full">
-                    {frames.map((frame: any, index: number) => {
+    const renderFrameWorkbenchRows = () =>
+        frames.map((frame: any, index: number) => {
                         const prevFrame = index > 0 ? frames[index - 1] : null;
                         const prevVideo =
                             prevFrame?.selected_video_id &&
@@ -1297,13 +1333,183 @@ export default function StoryboardVideoWorkbench() {
                                 tasksForFrame={tasksForFrame}
                                 onOpenAssetRef={onOpenAssetRef}
                             />
-                        );
-                    })}
-                    {frames.length === 0 ? (
-                        <div className="text-center text-gray-500 text-sm py-16">暂无分镜。请先写剧本并点击「生成分镜」。</div>
-                    ) : null}
-                </div>
-            </div>
+            );
+        });
+
+    return (
+        <div className="flex flex-col h-full text-white overflow-hidden relative">
+            {workbenchVideoMode === "i2v" ? (
+                <>
+                    <div className="flex-shrink-0 border-b border-white/10 bg-black/20">
+                        <div className="p-3 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                <h3 className="font-bold text-sm flex items-center gap-2 whitespace-nowrap">
+                                    <Layout size={16} className="text-primary shrink-0" />
+                                    <span className="hidden sm:inline">分镜与视频</span>
+                                </h3>
+                                <div className="flex bg-black/40 rounded-lg p-0.5 gap-0.5 border border-white/10 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => setWorkbenchVideoMode("i2v")}
+                                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] sm:text-xs transition-colors bg-white/10 text-white"
+                                    >
+                                        <ImageIcon size={12} />
+                                        首帧 I2V
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setWorkbenchVideoMode("r2v")}
+                                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] sm:text-xs transition-colors text-gray-500 hover:text-gray-300"
+                                    >
+                                        <Film size={12} />
+                                        角色 R2V
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap justify-end">
+                                <div className="flex flex-col gap-0.5 min-w-0">
+                                    <label className="flex items-center gap-1.5 text-[10px] text-gray-400 whitespace-nowrap">
+                                        <span className="hidden sm:inline">本集时长</span>
+                                        <span className="sm:hidden">时长</span>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            step={0.5}
+                                            placeholder="分"
+                                            value={episodeDurationMinutes}
+                                            onChange={(e) => setEpisodeDurationMinutes(e.target.value)}
+                                            className="w-14 sm:w-16 rounded border border-white/15 bg-black/40 px-1.5 py-0.5 text-[10px] text-gray-200 tabular-nums"
+                                            title="选填：用于估算分镜条数（按每镜约 4 秒、Seedance 2.0 规划）。成片总长以各镜实际视频为准。"
+                                        />
+                                        <span className="text-gray-500">分</span>
+                                    </label>
+                                    <span className="text-[9px] text-gray-600 max-w-[11rem] sm:max-w-[14rem] leading-tight hidden sm:block">
+                                        选填；估算条数用，成片总长可随后改每镜秒数
+                                    </span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowScriptOverlay(true)}
+                                    className="flex items-center gap-1 text-[10px] sm:text-xs text-gray-400 hover:text-white px-2 py-1 rounded-lg hover:bg-white/5"
+                                >
+                                    <FileText size={12} /> 脚本
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleAnalyzeToStoryboard}
+                                    disabled={isAnalyzing}
+                                    className="flex items-center gap-1 text-[10px] sm:text-xs bg-primary/80 hover:bg-primary px-2 py-1 rounded-lg disabled:opacity-50"
+                                >
+                                    {isAnalyzing ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                                    生成分镜
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setInsertIndex(0);
+                                        setIsCreateDialogOpen(true);
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] sm:text-xs px-2 py-1 rounded-lg border border-dashed border-white/20 hover:border-primary text-gray-400"
+                                >
+                                    <Plus size={12} /> 开头插入
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setInsertIndex(frames.length);
+                                        setIsCreateDialogOpen(true);
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] sm:text-xs px-2 py-1 rounded-lg border border-dashed border-white/20 hover:border-primary text-gray-400"
+                                >
+                                    <Plus size={12} /> 末尾插入
+                                </button>
+                                <span className="text-[10px] text-gray-500 font-mono">{frames.length} 镜</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto p-3">
+                        <div className="flex flex-col gap-2 w-full min-w-0 max-w-full">
+                            {renderFrameWorkbenchRows()}
+                            {frames.length === 0 ? (
+                                <div className="text-center text-gray-500 text-sm py-16">
+                                    暂无分镜。请先写剧本并点击「生成分镜」。
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                </>
+            ) : (
+                <>
+                    <div className="shrink-0 border-b border-purple-500/25 bg-gradient-to-r from-[#140a18] via-[#0c0c10] to-black/95">
+                        <div className="px-3 py-2.5 flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <Film size={22} className="text-purple-400 shrink-0" />
+                                <div className="min-w-0">
+                                    <h3 className="font-bold text-sm text-purple-100">角色驱动</h3>
+                                    <p className="text-[10px] text-gray-500 font-mono">wan2.6-r2v</p>
+                                </div>
+                                <div className="flex bg-black/50 rounded-lg p-0.5 gap-0.5 border border-white/10 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => setWorkbenchVideoMode("i2v")}
+                                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] sm:text-xs transition-colors text-gray-500 hover:text-gray-300"
+                                    >
+                                        <ImageIcon size={12} />
+                                        首帧 I2V
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setWorkbenchVideoMode("r2v")}
+                                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] sm:text-xs transition-colors bg-purple-500/30 text-purple-100 ring-1 ring-purple-500/40"
+                                    >
+                                        <Film size={12} />
+                                        角色 R2V
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowScriptOverlay(true)}
+                                    className="flex items-center gap-1 text-[10px] sm:text-xs text-gray-300 hover:text-white px-2 py-1 rounded-lg hover:bg-white/10"
+                                >
+                                    <FileText size={12} /> 脚本
+                                </button>
+                                <span className="text-[10px] text-gray-500 font-mono tabular-nums">{frames.length} 镜</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden overflow-x-hidden bg-[#060606]">
+                        {/* 左栏略宽（约 11:4），单滚动条、隐藏滚动条轨道 */}
+                        <div className="min-h-0 min-w-0 flex flex-[11] flex-col border-b lg:border-b-0 lg:border-r border-purple-500/15">
+                            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-3 sm:px-6 sm:py-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                                <div className="mx-auto w-full max-w-3xl lg:max-w-5xl min-h-0 flex flex-col">
+                                    <R2VStoryboardPanel
+                                        fullBleed
+                                        compact
+                                        params={r2vPanelParams}
+                                        onParamsChange={(patch) =>
+                                            setR2vPanelParams((prev) => ({ ...prev, ...patch }))
+                                        }
+                                        selectedFrameId={selectedFrameId}
+                                        onSelectedFrameIdChange={(id) => setSelectedFrameId(id)}
+                                        remixTask={r2vRemixTask}
+                                        remixNonce={r2vRemixNonce}
+                                        onTaskCreated={(p) => {
+                                            if (!currentProject?.id || !p?.video_tasks) return;
+                                            updateProject(currentProject.id, { video_tasks: p.video_tasks });
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        {/* 右栏任务队列 */}
+                        <div className="min-h-0 min-w-0 flex flex-[4] flex-col border-t lg:border-t-0 lg:border-l border-purple-500/20 bg-black/55">
+                            <VideoQueue tasks={r2vQueueTasks} onRemix={handleR2VQueueRemix} />
+                        </div>
+                    </div>
+                </>
+            )}
 
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileSelected} />
 

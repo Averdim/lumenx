@@ -331,6 +331,13 @@ export interface Series {
     updated_at: number;
 }
 
+/** Optional prefixes for Assets step image / motion generation, per kind. */
+export interface AssetGlobalPrompts {
+    character: string;
+    scene: string;
+    prop: string;
+}
+
 export interface Project {
     id: string;
     title: string;
@@ -351,6 +358,8 @@ export interface Project {
     merged_video_url?: string;
     series_id?: string;
     episode_number?: number;
+    /** From API `asset_global_prompts`; merged in getProject. */
+    assetGlobalPrompts?: AssetGlobalPrompts;
 }
 
 interface ProjectStore {

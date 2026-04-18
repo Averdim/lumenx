@@ -291,6 +291,14 @@ class PromptConfig(BaseModel):
     video_polish: str = Field("", description="Custom system prompt for video I2V polish (Prompt D)")
     r2v_polish: str = Field("", description="Custom system prompt for video R2V polish (Prompt E)")
 
+
+class AssetGlobalPrompts(BaseModel):
+    """Optional prefixes merged into asset image / motion prompts by category (Assets step)."""
+    character: str = Field("", description="Prepended for character asset generation prompts")
+    scene: str = Field("", description="Prepended for scene asset generation prompts")
+    prop: str = Field("", description="Prepended for prop asset generation prompts")
+
+
 class Script(BaseModel):
     id: str = Field(..., description="Unique identifier for the script project")
     title: str = Field(..., description="Title of the comic/video")
@@ -314,6 +322,12 @@ class Script(BaseModel):
 
     # Custom prompt configuration for polish stages
     prompt_config: PromptConfig = Field(default_factory=PromptConfig, description="Custom system prompts for polish stages")
+
+    # Global optional prompt prefixes for Assets (T2I / motion ref)
+    asset_global_prompts: AssetGlobalPrompts = Field(
+        default_factory=AssetGlobalPrompts,
+        description="Prepended to generation prompts per asset kind",
+    )
 
     # Merged video URL
     merged_video_url: Optional[str] = Field(None, description="URL of the merged final video")
