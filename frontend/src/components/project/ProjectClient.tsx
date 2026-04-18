@@ -1,17 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Palette, Layout, Film, Share2, Mic, Music, BookOpen, Users, Video, Settings, Key, MessageSquareCode } from "lucide-react";
+import { Palette, Film, Share2, Mic, Music, BookOpen, Users, Video, Settings, Key, MessageSquareCode } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import PipelineSidebar from "@/components/layout/PipelineSidebar";
 import type { BreadcrumbSegment } from "@/components/layout/BreadcrumbBar";
 import PropertiesPanel from "@/components/modules/PropertiesPanel";
 import ScriptProcessor from "@/components/modules/ScriptProcessor";
-import VideoGenerator from "@/components/modules/VideoGenerator";
 import VideoAssembly from "@/components/modules/VideoAssembly";
 import ConsistencyVault from "@/components/modules/ConsistencyVault";
 import ArtDirection from "@/components/modules/ArtDirection";
-import StoryboardComposer from "@/components/modules/StoryboardComposer";
+import StoryboardVideoWorkbench from "@/components/modules/StoryboardVideoWorkbench";
 import VoiceActingStudio from "@/components/modules/VoiceActingStudio";
 import FinalMixStudio from "@/components/modules/FinalMixStudio";
 import ExportStudio from "@/components/modules/ExportStudio";
@@ -39,12 +38,11 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
         { id: "script", label: "1. Script", icon: BookOpen },
         { id: "art_direction", label: "2. Art Direction", icon: Palette },
         { id: "assets", label: "3. Assets", icon: Users },
-        { id: "storyboard", label: "4. Storyboard", icon: Layout },
-        { id: "motion", label: "5. Motion", icon: Video },
-        { id: "assembly", label: "6. Assembly", icon: Film },
-        { id: "audio", label: "7. Voice", icon: Mic, comingSoon: true },
-        { id: "mix", label: "8. Final Mix", icon: Music, comingSoon: true },
-        { id: "export", label: "9. Export", icon: Share2, comingSoon: true },
+        { id: "storyboard", label: "4. Storyboard & Video", icon: Video },
+        { id: "assembly", label: "5. Assembly", icon: Film },
+        { id: "audio", label: "6. Voice", icon: Mic, comingSoon: true },
+        { id: "mix", label: "7. Final Mix", icon: Music, comingSoon: true },
+        { id: "export", label: "8. Export", icon: Share2, comingSoon: true },
     ];
 
     useEffect(() => {
@@ -138,16 +136,17 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
                     {activeStep === "script" && <ScriptProcessor />}
                     {activeStep === "art_direction" && <ArtDirection />}
                     {activeStep === "assets" && <ConsistencyVault />}
-                    {activeStep === "storyboard" && <StoryboardComposer />}
-                    {activeStep === "motion" && <VideoGenerator />}
+                    {activeStep === "storyboard" && <StoryboardVideoWorkbench />}
                     {activeStep === "assembly" && <VideoAssembly />}
                     {activeStep === "audio" && <VoiceActingStudio />}
                     {activeStep === "mix" && <FinalMixStudio />}
                     {activeStep === "export" && <ExportStudio />}
                 </div>
 
-                {/* Right Sidebar - Contextual Inspector */}
-                {activeStep !== "assembly" && activeStep !== "art_direction" && <PropertiesPanel activeStep={activeStep} />}
+                {/* Right Sidebar — hidden on storyboard (editing + preview live in StoryboardVideoWorkbench) */}
+                {activeStep !== "assembly" && activeStep !== "art_direction" && activeStep !== "storyboard" && (
+                    <PropertiesPanel activeStep={activeStep} />
+                )}
             </div>
         </main>
     );

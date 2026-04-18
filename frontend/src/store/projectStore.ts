@@ -288,7 +288,7 @@ export interface VideoParams {
     subjectMotion: string;
     model: string;
     shotType: string;
-    generationMode: string;
+    generationMode: string; 
     referenceVideoUrls: string[];
     /** Ordered reference images for Seedance 2.0 (same keys/URLs as storyboard selection) */
     referenceImageUrls: string[];

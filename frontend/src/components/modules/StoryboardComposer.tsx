@@ -11,6 +11,7 @@ import {
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, crudApi } from "@/lib/api";
 import { getAssetUrl, getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib/utils";
+import { getSelectedVariantUrl } from "@/lib/storyboardRefs";
 
 import StoryboardFrameEditor from "./StoryboardFrameEditor";
 
@@ -226,21 +227,6 @@ export default function StoryboardComposer() {
                 prop_ids: frame.prop_ids,
                 scene_id: frame.scene_id,
                 reference_image_urls: []
-            };
-
-            // Helper to get selected variant URL from an asset
-            const getSelectedVariantUrl = (asset: any): string | null => {
-                if (!asset || !asset.variants || asset.variants.length === 0) return null;
-
-                // Try to get selected variant first
-                if (asset.selected_id) {
-                    const selectedVariant = asset.variants.find((v: any) => v.id === asset.selected_id);
-                    if (selectedVariant?.url) return selectedVariant.url;
-                }
-
-                // Fallback: auto-select first variant if no selection exists
-                // This handles the case where selected_id is null/undefined
-                return asset.variants[0]?.url || null;
             };
 
             // 1. Add Scene Image - prioritize selected variant
