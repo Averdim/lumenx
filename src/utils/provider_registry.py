@@ -3,7 +3,8 @@ from dataclasses import dataclass, field, replace
 from typing import Dict, Mapping, Optional, Sequence, Tuple
 
 
-SUPPORTED_PROVIDER_BACKENDS = ("dashscope", "vendor")
+# "openai" = OpenAI-compatible URL + OPENAI_API_KEY (used by text LLM routing in llm_provider_registry).
+SUPPORTED_PROVIDER_BACKENDS = ("dashscope", "vendor", "openai")
 
 
 @dataclass
@@ -143,6 +144,17 @@ DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
         reference_video_input_mode={
             "dashscope": "dashscope_temp_file_url",
             "vendor": "pixverse_vendor_video_url",
+        },
+    ),
+    ProviderFamilyConfig(
+        model_family="gemini",
+        backend_default="openai",
+        credential_sources={
+            "openai": ("IMAGE_OPENAI_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2i"),
+        image_input_mode={
+            "openai": "openai_compatible_image_url",
         },
     ),
 )

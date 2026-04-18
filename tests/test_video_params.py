@@ -32,6 +32,8 @@ class TestVideoTaskModel:
         assert task.cfg_scale is None
         assert task.vidu_audio is None
         assert task.movement_amplitude is None
+        assert task.reference_image_urls == []
+        assert task.seedance_i2v_mode is None
 
     def test_kling_fields(self):
         task = self._make_task(mode="pro", sound="on", cfg_scale=0.7)

@@ -43,7 +43,8 @@ hiddenimports = [
     'pydantic',
     # 阿里云 SDK
     'dashscope',
-    'oss2',
+    'boto3',
+    'botocore',
     'alibabacloud_videoenhan20200320',
     'alibabacloud_tea_openapi',
     'alibabacloud_tea_util',

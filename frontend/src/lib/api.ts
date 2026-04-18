@@ -29,17 +29,23 @@ export type ProviderMode = "dashscope" | "vendor";
 
 export interface EnvConfigPayload {
     DASHSCOPE_API_KEY?: string;
-    ALIBABA_CLOUD_ACCESS_KEY_ID?: string;
-    ALIBABA_CLOUD_ACCESS_KEY_SECRET?: string;
-    OSS_BUCKET_NAME?: string;
-    OSS_ENDPOINT?: string;
-    OSS_BASE_PATH?: string;
+    MINIO_ENDPOINT?: string;
+    MINIO_ACCESS_KEY?: string;
+    MINIO_SECRET_KEY?: string;
+    MINIO_BUCKET?: string;
+    MINIO_USE_SSL?: string;
+    MINIO_BASE_PATH?: string;
+    MINIO_REGION?: string;
+    MINIO_PUBLIC_ENDPOINT?: string;
+    MINIO_PUBLIC_USE_SSL?: string;
     KLING_PROVIDER_MODE?: ProviderMode;
     VIDU_PROVIDER_MODE?: ProviderMode;
     PIXVERSE_PROVIDER_MODE?: ProviderMode;
     KLING_ACCESS_KEY?: string;
     KLING_SECRET_KEY?: string;
     VIDU_API_KEY?: string;
+    /** Volcengine Ark (Doubao / SeeDance I2V) */
+    ARK_API_KEY?: string;
     endpoint_overrides?: Record<string, string>;
     [key: string]: string | Record<string, string> | undefined;
 }
@@ -63,6 +69,9 @@ export interface VideoTask {
     frame_id?: string;
     generation_mode?: string;
     reference_video_urls?: string[];
+    /** Seedance 2.0: images after image_url (same order as UI) */
+    reference_image_urls?: string[];
+    seedance_i2v_mode?: string;
 }
 
 export const api = {
@@ -126,7 +135,9 @@ export const api = {
         cfgScale?: number,
         // Vidu params
         viduAudio?: boolean,
-        movementAmplitude?: string
+        movementAmplitude?: string,
+        referenceImageUrls?: string[],
+        seedanceI2vMode?: string
     ) => {
         const res = await axios.post(`${API_URL}/projects/${id}/video_tasks`, {
             image_url,
@@ -144,6 +155,8 @@ export const api = {
             shot_type: shotType,
             generation_mode: generationMode,
             reference_video_urls: referenceVideoUrls,
+            reference_image_urls: referenceImageUrls?.length ? referenceImageUrls : undefined,
+            seedance_i2v_mode: seedanceI2vMode,
             // Kling
             mode,
             sound: sound != null ? (sound ? "on" : "off") : undefined,
@@ -316,7 +329,9 @@ export const api = {
         characterAspectRatio?: string,
         sceneAspectRatio?: string,
         propAspectRatio?: string,
-        storyboardAspectRatio?: string
+        storyboardAspectRatio?: string,
+        llmModel?: string,
+        llmBackend?: "auto" | "dashscope" | "openai"
     ) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/model_settings`, {
             t2i_model: t2iModel,
@@ -325,7 +340,9 @@ export const api = {
             character_aspect_ratio: characterAspectRatio,
             scene_aspect_ratio: sceneAspectRatio,
             prop_aspect_ratio: propAspectRatio,
-            storyboard_aspect_ratio: storyboardAspectRatio
+            storyboard_aspect_ratio: storyboardAspectRatio,
+            llm_model: llmModel,
+            llm_backend: llmBackend,
         });
         return res.data;
     },
@@ -646,6 +663,7 @@ export const api = {
         scene_aspect_ratio?: string;
         prop_aspect_ratio?: string;
         storyboard_aspect_ratio?: string;
+        llm_model?: string;
     }) => {
         const response = await axios.put(`${API_URL}/series/${seriesId}/model_settings`, settings);
         return response.data;

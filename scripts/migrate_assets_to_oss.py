@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv()
 
-from src.utils.oss_utils import OSSImageUploader
+from src.utils.oss_utils import OSSImageUploader, get_oss_base_path
 
 
 
@@ -40,7 +40,7 @@ def is_migratable_path(value: str, uploader) -> bool:
         return True
         
     # Case 2: Already has OSS prefix but might be missing from OSS
-    base_path = os.getenv('OSS_BASE_PATH', 'lumenx').strip("'\"/")
+    base_path = get_oss_base_path().strip("'\"/")
     if value.startswith(f"{base_path}/"):
         if not uploader.object_exists(value):
             print(f"  ! Missing from OSS: {value}")
@@ -54,7 +54,7 @@ def migrate_value(value, uploader, output_dir, stats):
     if isinstance(value, str):
         if is_migratable_path(value, uploader):
             # Determine local path
-            base_path = os.getenv('OSS_BASE_PATH', 'lumenx').strip("'\"/")
+            base_path = get_oss_base_path().strip("'\"/")
             
             if value.startswith(f"{base_path}/"):
                 # Convert OSS key back to local path for upload
@@ -116,17 +116,17 @@ def migrate_value(value, uploader, output_dir, stats):
 
 def main():
     print("=" * 60)
-    print("Legacy Asset Migration to OSS")
+    print("Legacy Asset Migration to MinIO / S3")
     print("=" * 60)
     
     # Initialize uploader
     uploader = OSSImageUploader()
     if not uploader.is_configured:
-        print("ERROR: OSS is not configured. Please set environment variables.")
+        print("ERROR: MinIO is not configured. Set MINIO_* in .env.")
         sys.exit(1)
     
-    print(f"OSS Bucket: {uploader.bucket.bucket_name if uploader.bucket else 'N/A'}")
-    base_path = os.getenv('OSS_BASE_PATH', 'lumenx').strip("'\"/")
+    print(f"Bucket: {uploader.bucket_name or 'N/A'}")
+    base_path = get_oss_base_path().strip("'\"/")
     print(f"Base Path: {base_path}")
 
     

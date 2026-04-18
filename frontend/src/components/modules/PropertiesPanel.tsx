@@ -124,6 +124,7 @@ function AssetsInspector({ project }: { project: any }) {
                 type === 'character' ? ratio : undefined,
                 type === 'scene' ? ratio : undefined,
                 type === 'prop' ? ratio : undefined,
+                undefined,
                 undefined
             );
             updateProject(currentProject.id, updated);

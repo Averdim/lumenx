@@ -107,6 +107,15 @@ class VideoTask(BaseModel):
     # Vidu params
     vidu_audio: Optional[bool] = Field(None, description="Vidu audio output")
     movement_amplitude: Optional[str] = Field(None, description="Vidu movement amplitude: auto/small/medium/large")
+    # Volcengine Ark Seedance 2.0: extra reference frames (ordered; first frame is image_url)
+    reference_image_urls: List[str] = Field(
+        default_factory=list,
+        description="Additional input images after image_url (Seedance 2.0 multimodal / last frame)",
+    )
+    seedance_i2v_mode: Optional[str] = Field(
+        None,
+        description="Seedance 2.0 I2V: first_frame | first_last_frame | multimodal_ref",
+    )
     created_at: float = Field(default_factory=time.time)
 
 class Character(BaseModel):
@@ -255,6 +264,14 @@ class ModelSettings(BaseModel):
     t2i_model: str = Field("wan2.6-t2i", description="Text-to-Image model for Assets")
     i2i_model: str = Field("wan2.6-image", description="Image-to-Image model for Storyboard")
     i2v_model: str = Field("wan2.6-i2v", description="Image-to-Video model for Motion")
+    llm_model: str = Field(
+        "",
+        description="Chat/LLM model id for script analysis and polish; empty uses server default from env",
+    )
+    llm_backend: str = Field(
+        "auto",
+        description="LLM channel: auto (model-prefix registry), dashscope, or openai (OPENAI_BASE_URL + OPENAI_API_KEY)",
+    )
     character_aspect_ratio: str = Field("9:16", description="Aspect ratio for Characters (9:16, 16:9, 1:1)")
     scene_aspect_ratio: str = Field("16:9", description="Aspect ratio for Scenes (9:16, 16:9, 1:1)")
     prop_aspect_ratio: str = Field("1:1", description="Aspect ratio for Props (9:16, 16:9, 1:1)")

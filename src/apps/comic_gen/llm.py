@@ -5,7 +5,7 @@ import uuid
 import logging
 import traceback
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from .models import Script, Character, Scene, Prop, StoryboardFrame, GenerationStatus
 
@@ -132,11 +132,25 @@ class ScriptProcessor:
         from .llm_adapter import LLMAdapter
         self.llm = LLMAdapter()
 
+    @staticmethod
+    def _resolved_llm_model(llm_model: Optional[str]) -> Optional[str]:
+        """Non-empty string → use as model id; None/blank → let LLMAdapter use env default."""
+        if llm_model is None:
+            return None
+        s = str(llm_model).strip()
+        return s if s else None
+
     @property
     def is_configured(self):
         return self.llm.is_configured
 
-    def parse_novel(self, title: str, text: str) -> Script:
+    def parse_novel(
+        self,
+        title: str,
+        text: str,
+        llm_model: Optional[str] = None,
+        llm_backend: Optional[str] = None,
+    ) -> Script:
         """
         Parses the raw novel text into a structured Script object using an LLM.
         """
@@ -147,10 +161,13 @@ class ScriptProcessor:
              raise ValueError("LLM API Key 未配置。请在 API 配置中设置对应的 API Key 后重试。")
 
         prompt = self._construct_prompt(text)
+        _m = self._resolved_llm_model(llm_model)
 
         try:
             content = self.llm.chat(
                 messages=[{"role": "user", "content": prompt}],
+                model=_m,
+                llm_backend=llm_backend,
             )
             logger.debug(f"LLM Response Content:\n{content}")
 
@@ -312,7 +329,13 @@ class ScriptProcessor:
             updated_at=time.time()
         )
 
-    def split_into_episodes(self, text: str, suggested_episodes: int = 3) -> List[Dict[str, Any]]:
+    def split_into_episodes(
+        self,
+        text: str,
+        suggested_episodes: int = 3,
+        llm_model: Optional[str] = None,
+        llm_backend: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Uses LLM to split a long text into episodes by narrative rhythm.
         Returns a list of episode dicts with title, summary, start/end markers, etc.
@@ -355,6 +378,8 @@ class ScriptProcessor:
         try:
             content = self.llm.chat(
                 messages=[{"role": "user", "content": prompt}],
+                model=self._resolved_llm_model(llm_model),
+                llm_backend=llm_backend,
             )
             content = _strip_markdown_json(content)
             data = json.loads(content)
@@ -515,7 +540,12 @@ class ScriptProcessor:
         {text}
         """
 
-    def analyze_script_for_styles(self, script_text: str) -> List[Dict[str, Any]]:
+    def analyze_script_for_styles(
+        self,
+        script_text: str,
+        llm_model: Optional[str] = None,
+        llm_backend: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """使用 LLM 分析剧本并推荐视觉风格"""
         
         logger.info("Analyzing script for visual style recommendations...")
@@ -570,6 +600,8 @@ CRITICAL STYLE GUIDELINES:
                     {"role": "user", "content": user_prompt}
                 ],
                 response_format={'type': 'json_object'},
+                model=self._resolved_llm_model(llm_model),
+                llm_backend=llm_backend,
             )
             logger.debug(f"Style Analysis Response:\n{content}")
 
@@ -703,7 +735,13 @@ CRITICAL STYLE GUIDELINES:
             }
         ]
     
-    def analyze_to_storyboard(self, text: str, entities_json: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def analyze_to_storyboard(
+        self,
+        text: str,
+        entities_json: Dict[str, Any],
+        llm_model: Optional[str] = None,
+        llm_backend: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Analyzes script text and generates storyboard frames using Prompt B (Storyboard Director).
         Returns a list of frame dictionaries with visual atoms.
@@ -801,11 +839,14 @@ Props:
 """
 
         try:
+            _m = self._resolved_llm_model(llm_model)
             content = self.llm.chat(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": "请开始生成分镜帧列表，确保覆盖剧本中的所有内容。"}
                 ],
+                model=_m,
+                llm_backend=llm_backend,
             ).strip()
             logger.debug(f"Storyboard Analysis Raw Response: {content[:500]}...")
 
@@ -821,6 +862,8 @@ Props:
                     {"role": "user", "content": "请开始生成分镜帧列表，确保覆盖剧本中的所有内容。请务必输出合法的JSON格式。"}
                 ],
                 response_format={'type': 'json_object'},
+                model=_m,
+                llm_backend=llm_backend,
             ).strip()
             logger.debug(f"Storyboard Analysis Retry Response: {retry_content[:500]}...")
             frames = self._parse_storyboard_json(retry_content)
@@ -871,7 +914,15 @@ Props:
             }
         ]
 
-    def polish_storyboard_prompt(self, draft_prompt: str, assets: List[Dict[str, Any]], feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
+    def polish_storyboard_prompt(
+        self,
+        draft_prompt: str,
+        assets: List[Dict[str, Any]],
+        feedback: str = "",
+        custom_system_prompt: str = "",
+        llm_model: Optional[str] = None,
+        llm_backend: Optional[str] = None,
+    ) -> Dict[str, str]:
         """
         Polishes the storyboard prompt using Qwen-Plus, incorporating asset references.
         Returns a dict with 'prompt_cn' and 'prompt_en'.
@@ -912,6 +963,8 @@ Props:
             content = self.llm.chat(
                 messages=[{"role": "user", "content": user_content}],
                 response_format={'type': 'json_object'},
+                model=self._resolved_llm_model(llm_model),
+                llm_backend=llm_backend,
             ).strip()
             logger.debug(f"Polished Prompt Raw: {content}")
 
@@ -934,7 +987,14 @@ Props:
         except Exception as e:
             logger.error(f"Error polishing prompt: {e}", exc_info=True)
             return fallback_result
-    def polish_video_prompt(self, draft_prompt: str, feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
+    def polish_video_prompt(
+        self,
+        draft_prompt: str,
+        feedback: str = "",
+        custom_system_prompt: str = "",
+        llm_model: Optional[str] = None,
+        llm_backend: Optional[str] = None,
+    ) -> Dict[str, str]:
         """
         Polishes a video generation prompt using Qwen-Plus.
         Returns bilingual prompts {prompt_cn, prompt_en}.
@@ -964,6 +1024,8 @@ Props:
                     {'role': 'user', 'content': user_message}
                 ],
                 response_format={'type': 'json_object'},
+                model=self._resolved_llm_model(llm_model),
+                llm_backend=llm_backend,
             ).strip()
             logger.debug(f"Video Prompt Polish Raw: {content[:200]}...")
 
@@ -985,7 +1047,15 @@ Props:
             logger.exception("Failed to polish video prompt")
             return fallback
 
-    def polish_r2v_prompt(self, draft_prompt: str, slots: List[Dict[str, str]], feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
+    def polish_r2v_prompt(
+        self,
+        draft_prompt: str,
+        slots: List[Dict[str, str]],
+        feedback: str = "",
+        custom_system_prompt: str = "",
+        llm_model: Optional[str] = None,
+        llm_backend: Optional[str] = None,
+    ) -> Dict[str, str]:
         """
         Polishes a R2V (Reference-to-Video) prompt using Qwen-Plus.
         R2V requires explicit character references using character1, character2, character3 tags.
@@ -1025,6 +1095,8 @@ Props:
                     {'role': 'user', 'content': user_message}
                 ],
                 response_format={'type': 'json_object'},
+                model=self._resolved_llm_model(llm_model),
+                llm_backend=llm_backend,
             ).strip()
             logger.debug(f"R2V Polished Raw: {content[:200]}...")
 

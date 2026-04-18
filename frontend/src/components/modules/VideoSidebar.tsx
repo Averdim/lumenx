@@ -2,10 +2,19 @@
 
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings2, List, RefreshCw, ChevronDown, ChevronUp, Mic, Music, VolumeX, Wand2 } from "lucide-react";
+import { Settings2, List, RefreshCw, ChevronDown, ChevronUp, Mic, Music, VolumeX, Wand2, X } from "lucide-react";
 import VideoQueue from "./VideoQueue";
 import { VideoTask, api } from "@/lib/api";
-import { I2V_MODELS, DurationConfig, ModelParamSupport, VideoParams, GRID_COLS_CLASS } from "@/store/projectStore";
+import { getAssetUrl } from "@/lib/utils";
+import {
+    I2V_MODELS,
+    DurationConfig,
+    ModelParamSupport,
+    VideoParams,
+    GRID_COLS_CLASS,
+    SEEDANCE_20_MODEL_ID,
+    type SeedanceI2vMode,
+} from "@/store/projectStore";
 
 interface VideoSidebarProps {
     tasks: VideoTask[];
@@ -57,6 +66,11 @@ export default function VideoSidebar({ tasks, onRemix, params, setParams }: Vide
             // Vidu defaults
             newParams.viduAudio = true;
             newParams.movementAmplitude = np.movementAmplitude?.default ?? "auto";
+            newParams.referenceImageUrls = [];
+            newParams.seedanceI2vMode = "first_frame";
+            if (value === SEEDANCE_20_MODEL_ID) {
+                newParams.generateAudio = true;
+            }
         }
         setParams(newParams);
     };
@@ -249,6 +263,104 @@ export default function VideoSidebar({ tasks, onRemix, params, setParams }: Vide
                                         </div>
                                     );
                                 })()}
+
+                                {params.model === SEEDANCE_20_MODEL_ID && (
+                                    <div className="space-y-3 pt-1">
+                                        <div>
+                                            <label className="block text-xs text-gray-400 mb-2">
+                                                Seedance 2.0 模式
+                                            </label>
+                                            <div className="flex flex-col gap-2">
+                                                {(
+                                                    [
+                                                        {
+                                                            id: "first_frame" as SeedanceI2vMode,
+                                                            title: "首帧",
+                                                            hint: "1 张",
+                                                        },
+                                                        {
+                                                            id: "first_last_frame" as SeedanceI2vMode,
+                                                            title: "首尾帧",
+                                                            hint: "2 张",
+                                                        },
+                                                        {
+                                                            id: "multimodal_ref" as SeedanceI2vMode,
+                                                            title: "多模态参考",
+                                                            hint: "1～9 张",
+                                                        },
+                                                    ] as const
+                                                ).map((row) => (
+                                                    <button
+                                                        key={row.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            let urls = [...params.referenceImageUrls];
+                                                            if (row.id === "first_frame") urls = urls.slice(0, 1);
+                                                            else if (row.id === "first_last_frame")
+                                                                urls = urls.slice(0, 2);
+                                                            setParams({
+                                                                ...params,
+                                                                seedanceI2vMode: row.id,
+                                                                referenceImageUrls: urls,
+                                                            });
+                                                        }}
+                                                        className={`w-full flex items-center justify-between p-2 rounded-lg border text-left transition-all ${
+                                                            params.seedanceI2vMode === row.id
+                                                                ? "border-primary/50 bg-primary/10"
+                                                                : "border-white/10 bg-white/5 hover:border-white/20"
+                                                        }`}
+                                                    >
+                                                        <span className="text-xs font-medium text-white">
+                                                            {row.title}
+                                                        </span>
+                                                        <span className="text-[10px] text-gray-500">{row.hint}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {params.referenceImageUrls.length > 0 && (
+                                            <div>
+                                                <label className="block text-xs text-gray-400 mb-2">
+                                                    参考图 ({params.referenceImageUrls.length})
+                                                </label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {params.referenceImageUrls.map((u, idx) => (
+                                                        <div
+                                                            key={`${u}-${idx}`}
+                                                            className="relative w-16 h-16 rounded-lg overflow-hidden border border-white/15 bg-black/30"
+                                                        >
+                                                            <img
+                                                                src={
+                                                                    u.startsWith("blob:")
+                                                                        ? u
+                                                                        : getAssetUrl(u)
+                                                                }
+                                                                alt=""
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                title="移除"
+                                                                onClick={() =>
+                                                                    setParams({
+                                                                        ...params,
+                                                                        referenceImageUrls:
+                                                                            params.referenceImageUrls.filter(
+                                                                                (_, i) => i !== idx
+                                                                            ),
+                                                                    })
+                                                                }
+                                                                className="absolute top-0.5 right-0.5 p-0.5 rounded-full bg-black/70 text-white hover:bg-red-600/90"
+                                                            >
+                                                                <X size={10} />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {/* Shot Type - Only when model supports it and promptExtend is enabled */}
                                 {modelParams.shotType && (

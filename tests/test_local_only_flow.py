@@ -27,6 +27,7 @@ def _build_pipeline(script: Script, wanx_model: WanxModel) -> ComicGenPipeline:
     pipeline._save_data = lambda: None
     pipeline._kling_model = None
     pipeline._vidu_model = None
+    pipeline._doubao_model = None
     pipeline.video_generator = SimpleNamespace(model=wanx_model)
     pipeline.get_script = lambda script_id: pipeline.scripts.get(script_id)
     return pipeline
@@ -41,10 +42,10 @@ def test_local_only_pipeline_flow_without_oss(monkeypatch):
     """
     monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
     for key in (
-        "ALIBABA_CLOUD_ACCESS_KEY_ID",
-        "ALIBABA_CLOUD_ACCESS_KEY_SECRET",
-        "OSS_BUCKET_NAME",
-        "OSS_ENDPOINT",
+        "MINIO_ENDPOINT",
+        "MINIO_ACCESS_KEY",
+        "MINIO_SECRET_KEY",
+        "MINIO_BUCKET",
         "KLING_ACCESS_KEY",
         "KLING_SECRET_KEY",
         "VIDU_API_KEY",

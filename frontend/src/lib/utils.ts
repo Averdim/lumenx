@@ -19,8 +19,12 @@ export function getAssetUrlWithTimestamp(path: string | null | undefined, timest
     const baseUrl = getAssetUrl(path);
     if (!baseUrl) return "";
 
-    // If URL already has query params, append with & otherwise with ?
-    const separator = baseUrl.includes('?') ? '&' : '?';
+    // S3/MinIO presigned URLs: the query string is part of the signature — do not append cache-busters.
+    if (baseUrl.includes("X-Amz-Signature=") || baseUrl.includes("X-Amz-Algorithm=")) {
+        return baseUrl;
+    }
+
+    const separator = baseUrl.includes("?") ? "&" : "?";
     return baseUrl + separator + `t=${timestamp || 0}`;
 }
 

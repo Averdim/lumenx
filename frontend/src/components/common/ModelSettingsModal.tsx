@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, X, Image, Video, Film, Check, Layout, User, Building, Box } from 'lucide-react';
-import { useProjectStore, T2I_MODELS, I2I_MODELS, I2V_MODELS, ASPECT_RATIOS } from '@/store/projectStore';
+import { Settings, X, Image, Video, Film, Check, Layout, User, Building, Box, MessageSquare } from 'lucide-react';
+import { useProjectStore, T2I_MODELS, I2I_MODELS, I2V_MODELS, ASPECT_RATIOS, LLM_MODELS } from '@/store/projectStore';
 import { api } from '@/lib/api';
 
 interface ModelSettingsModalProps {
@@ -22,6 +22,7 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
     const [sceneAspectRatio, setSceneAspectRatio] = useState(currentProject?.model_settings?.scene_aspect_ratio || '16:9');
     const [propAspectRatio, setPropAspectRatio] = useState(currentProject?.model_settings?.prop_aspect_ratio || '1:1');
     const [storyboardAspectRatio, setStoryboardAspectRatio] = useState(currentProject?.model_settings?.storyboard_aspect_ratio || '16:9');
+    const [llmModel, setLlmModel] = useState(currentProject?.model_settings?.llm_model ?? '');
     const [isSaving, setIsSaving] = useState(false);
 
     // Sync state when project changes
@@ -34,6 +35,7 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
             setSceneAspectRatio(currentProject.model_settings.scene_aspect_ratio || '16:9');
             setPropAspectRatio(currentProject.model_settings.prop_aspect_ratio || '1:1');
             setStoryboardAspectRatio(currentProject.model_settings.storyboard_aspect_ratio || '16:9');
+            setLlmModel(currentProject.model_settings.llm_model ?? '');
         }
     }, [currentProject?.model_settings]);
 
@@ -49,7 +51,8 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
                 characterAspectRatio,
                 sceneAspectRatio,
                 propAspectRatio,
-                storyboardAspectRatio
+                storyboardAspectRatio,
+                llmModel
             );
             updateProject(currentProject.id, updated);
             onClose();
@@ -100,6 +103,44 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
 
                     {/* Content */}
                     <div className="p-5 space-y-6 overflow-y-auto">
+                        {/* LLM (script analysis & polish) */}
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2 text-sm font-bold text-white">
+                                <MessageSquare size={16} className="text-amber-400" />
+                                <span>Text / LLM</span>
+                            </div>
+                            <p className="text-xs text-gray-500">Used for parsing, storyboard analysis, style recommendations, and prompt polish.</p>
+                            <div className="space-y-2">
+                                <label className="text-xs text-gray-400">Model</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {LLM_MODELS.map((model) => {
+                                        const selected = (llmModel === '' && model.id === '') || llmModel === model.id;
+                                        return (
+                                            <button
+                                                key={model.id || 'default'}
+                                                type="button"
+                                                onClick={() => setLlmModel(model.id)}
+                                                className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${selected
+                                                    ? 'border-amber-500/50 bg-amber-500/10'
+                                                    : 'border-white/10 hover:border-white/20 bg-white/5'
+                                                    }`}
+                                            >
+                                                {selected && (
+                                                    <div className="absolute top-2 right-2">
+                                                        <Check size={14} className="text-amber-400" />
+                                                    </div>
+                                                )}
+                                                <span className="text-sm font-medium text-white">{model.name}</span>
+                                                <span className="text-xs text-gray-500">{model.description}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="border-t border-white/10" />
+
                         {/* Assets Section */}
                         <div className="space-y-5">
                             <div className="flex items-center gap-2 text-sm font-bold text-white">

@@ -41,8 +41,15 @@ def _is_under(path: Path, parent: Path) -> bool:
         return False
 
 
+def _normalize_path_separators(value: str) -> str:
+    """Unify Windows backslashes so refs match LOCAL_MEDIA_PREFIXES (forward slashes)."""
+    return value.replace("\\", "/")
+
+
 def _normalized_oss_base_path(oss_base_path: Optional[str] = None) -> str:
-    value = oss_base_path if oss_base_path is not None else os.getenv("OSS_BASE_PATH", "lumenx")
+    if oss_base_path is not None:
+        return str(oss_base_path).strip().strip("'\"/ ")
+    value = os.getenv("MINIO_BASE_PATH") or os.getenv("OSS_BASE_PATH", "lumenx")
     return str(value).strip().strip("'\"/ ")
 
 
@@ -56,7 +63,7 @@ def classify_media_ref(
     if not isinstance(value, str):
         return MEDIA_REF_UNKNOWN
 
-    raw = value.strip()
+    raw = _normalize_path_separators(value.strip())
     if not raw:
         return MEDIA_REF_UNKNOWN
 
@@ -92,7 +99,7 @@ def resolve_local_media_path(value: str, *, project_root: Optional[str] = None) 
     if classify_media_ref(value, project_root=project_root) != MEDIA_REF_LOCAL_PATH:
         return None
 
-    raw = value.strip()
+    raw = _normalize_path_separators(value.strip())
     output_root = _output_root(project_root).resolve()
 
     if os.path.isabs(raw):

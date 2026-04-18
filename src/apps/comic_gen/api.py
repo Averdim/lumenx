@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -22,7 +22,7 @@ from .models import (
     VideoTask,
 )
 from .llm import ScriptProcessor, DEFAULT_STORYBOARD_POLISH_PROMPT, DEFAULT_VIDEO_POLISH_PROMPT, DEFAULT_R2V_POLISH_PROMPT
-from ...utils.oss_utils import OSSImageUploader, sign_oss_urls_in_data
+from ...utils.oss_utils import OSSImageUploader, get_oss_base_path, sign_oss_urls_in_data
 from ...utils import setup_logging
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv, set_key
@@ -39,8 +39,11 @@ env_path = os.path.join(_project_root, ".env")
 if os.path.exists(env_path):
     load_dotenv(env_path, override=True)
 
-# Debug: Print OSS configuration at startup
-logger.info(f"STARTUP: OSS_ENDPOINT={os.getenv('OSS_ENDPOINT')}, OSS_BUCKET_NAME={os.getenv('OSS_BUCKET_NAME')}, OSS_BASE_PATH={os.getenv('OSS_BASE_PATH')}")
+logger.info(
+    f"STARTUP: MINIO_ENDPOINT={os.getenv('MINIO_ENDPOINT')}, "
+    f"MINIO_BUCKET={os.getenv('MINIO_BUCKET')}, "
+    f"MINIO_BASE_PATH={os.getenv('MINIO_BASE_PATH')}"
+)
 
 
 
@@ -82,24 +85,24 @@ pipeline = ComicGenPipeline()
 
 @app.get("/debug/config")
 async def debug_config():
-    """Diagnostic endpoint to check OSS and path configuration."""
+    """Diagnostic endpoint to check MinIO and path configuration."""
     uploader = OSSImageUploader()
     return {
         "oss_configured": uploader.is_configured,
         "oss_bucket_initialized": uploader.bucket is not None,
-        "oss_base_path": os.getenv("OSS_BASE_PATH", "lumenx"),
+        "oss_base_path": get_oss_base_path(),
         "output_dir_exists": os.path.exists("output"),
         "output_contents": os.listdir("output") if os.path.exists("output") else [],
         "cwd": os.getcwd(),
         "env_vars_present": {
-            "OSS_ENDPOINT": bool(os.getenv("OSS_ENDPOINT")),
-            "OSS_BUCKET_NAME": bool(os.getenv("OSS_BUCKET_NAME")),
-            "ALIBABA_CLOUD_ACCESS_KEY_ID": bool(os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")),
-        }
+            "MINIO_ENDPOINT": bool(os.getenv("MINIO_ENDPOINT")),
+            "MINIO_BUCKET": bool(os.getenv("MINIO_BUCKET")),
+            "MINIO_ACCESS_KEY": bool(os.getenv("MINIO_ACCESS_KEY")),
+        },
     }
 
 def signed_response(data):
-    """Helper to sign OSS URLs in data before returning to frontend.
+    """Helper to sign object-storage URLs in data before returning to frontend.
     
     Handles Pydantic models, lists of models, and dicts.
     Returns a JSONResponse with signed URLs.
@@ -115,10 +118,8 @@ def signed_response(data):
     else:
         processed_data = data
     
-    # Check if OSS is configured
     uploader = OSSImageUploader()
     if uploader.is_configured:
-        # OSS mode: sign URLs in the data
         processed_data = sign_oss_urls_in_data(processed_data, uploader)
     
     # Return JSONResponse directly to avoid Pydantic re-validation stripping fields
@@ -439,6 +440,8 @@ class UpdateModelSettingsRequest(BaseModel):
     scene_aspect_ratio: Optional[str] = None
     prop_aspect_ratio: Optional[str] = None
     storyboard_aspect_ratio: Optional[str] = None
+    llm_model: Optional[str] = None
+    llm_backend: Optional[str] = None  # auto | dashscope | openai
 
 @app.get("/series/{series_id}/model_settings")
 async def get_series_model_settings(series_id: str):
@@ -577,6 +580,8 @@ async def import_series_assets(series_id: str, request: ImportAssetsRequest):
 async def import_file_preview(
     file: UploadFile = File(...),
     suggested_episodes: int = 3,
+    llm_model: Optional[str] = Form(None),
+    llm_backend: Optional[str] = Form(None),
 ):
     """Upload a txt/md file and get LLM episode split preview."""
     if suggested_episodes < 1 or suggested_episodes > 50:
@@ -590,7 +595,7 @@ async def import_file_preview(
         loop = asyncio.get_event_loop()
         episodes = await loop.run_in_executor(
             None,
-            partial(pipeline.import_file_and_split, text, suggested_episodes)
+            partial(pipeline.import_file_and_split, text, suggested_episodes, llm_model, llm_backend)
         )
         # Store text in pipeline cache, return import_id instead of full text
         import_id = str(uuid.uuid4())
@@ -650,14 +655,19 @@ async def import_file_confirm(request: ConfirmImportRequest):
 
 class EnvConfig(ProviderRoutingConfig):
     DASHSCOPE_API_KEY: Optional[str] = None
-    ALIBABA_CLOUD_ACCESS_KEY_ID: Optional[str] = None
-    ALIBABA_CLOUD_ACCESS_KEY_SECRET: Optional[str] = None
-    OSS_BUCKET_NAME: Optional[str] = None
-    OSS_ENDPOINT: Optional[str] = None
-    OSS_BASE_PATH: Optional[str] = None
+    MINIO_ENDPOINT: Optional[str] = None
+    MINIO_ACCESS_KEY: Optional[str] = None
+    MINIO_SECRET_KEY: Optional[str] = None
+    MINIO_BUCKET: Optional[str] = None
+    MINIO_USE_SSL: Optional[str] = None
+    MINIO_BASE_PATH: Optional[str] = None
+    MINIO_REGION: Optional[str] = None
+    MINIO_PUBLIC_ENDPOINT: Optional[str] = None
+    MINIO_PUBLIC_USE_SSL: Optional[str] = None
     KLING_ACCESS_KEY: Optional[str] = None
     KLING_SECRET_KEY: Optional[str] = None
     VIDU_API_KEY: Optional[str] = None
+    ARK_API_KEY: Optional[str] = None
     endpoint_overrides: Dict[str, str] = Field(default_factory=dict)
 
 
@@ -822,13 +832,11 @@ async def update_env_config(config: EnvConfig):
         save_user_config(config_dict)
         remove_user_config_keys(keys_to_remove)
 
-        # Reset OSS singleton to pick up new config (non-blocking)
         try:
             OSSImageUploader.reset_instance()
-            logger.info("OSS instance reset successfully")
+            logger.info("Object storage client reset successfully")
         except Exception as oss_e:
-            # OSS reset failure should not block config saving
-            logger.warning(f"OSS reset failed (non-critical): {oss_e}")
+            logger.warning(f"Storage client reset failed (non-critical): {oss_e}")
 
         config_path = get_user_config_path()
         return {"status": "success", "message": f"Configuration saved to {config_path}"}
@@ -1131,6 +1139,11 @@ class CreateVideoTaskRequest(BaseModel):
     # Vidu params
     vidu_audio: Optional[bool] = None
     movement_amplitude: Optional[str] = None
+    # Seedance 2.0 (Ark): ordered refs after image_url; mode drives API roles
+    reference_image_urls: List[str] = Field(default_factory=list)
+    seedance_i2v_mode: Optional[str] = Field(
+        None, description="first_frame | first_last_frame | multimodal_ref"
+    )
 
 
 async def process_video_task(script_id: str, task_id: str):
@@ -1168,6 +1181,8 @@ async def create_video_task(script_id: str, request: CreateVideoTaskRequest, bac
                 cfg_scale=request.cfg_scale,
                 vidu_audio=request.vidu_audio,
                 movement_amplitude=request.movement_amplitude,
+                reference_image_urls=request.reference_image_urls,
+                seedance_i2v_mode=request.seedance_i2v_mode,
             )
 
             # Find the created task object
@@ -1443,7 +1458,9 @@ async def update_model_settings(script_id: str, request: UpdateModelSettingsRequ
             request.character_aspect_ratio,
             request.scene_aspect_ratio,
             request.prop_aspect_ratio,
-            request.storyboard_aspect_ratio
+            request.storyboard_aspect_ratio,
+            request.llm_model,
+            request.llm_backend,
         )
         return signed_response(updated_script)
     except ValueError as e:
@@ -1863,9 +1880,17 @@ async def analyze_script_for_styles(script_id: str, request: AnalyzeStyleRequest
 
         # Use LLM to analyze and recommend styles (run in thread pool to avoid blocking, Python 3.8 compatible)
         loop = asyncio.get_event_loop()
+        series = pipeline.get_series(script.series_id) if script.series_id else None
+        llm_model = pipeline.get_effective_llm_model(script, series)
+        llm_backend = pipeline.get_effective_llm_backend(script, series)
         recommendations = await loop.run_in_executor(
             None,  # Use default executor
-            partial(pipeline.script_processor.analyze_script_for_styles, request.script_text)
+            partial(
+                pipeline.script_processor.analyze_script_for_styles,
+                request.script_text,
+                llm_model,
+                llm_backend,
+            )
         )
 
         return {"recommendations": recommendations}
@@ -1945,6 +1970,28 @@ def _get_custom_prompt(script_id: str, field: str) -> str:
     return effective
 
 
+def _get_effective_llm_model_for_script(script_id: str):
+    """Resolve per-project (and series fallback) LLM model for API routes that take script_id."""
+    if not script_id:
+        return None
+    script = pipeline.get_script(script_id)
+    if not script:
+        return None
+    series = pipeline.get_series(script.series_id) if script.series_id else None
+    return pipeline.get_effective_llm_model(script, series)
+
+
+def _get_effective_llm_backend_for_script(script_id: str):
+    """Resolve per-project LLM backend (auto = None)."""
+    if not script_id:
+        return None
+    script = pipeline.get_script(script_id)
+    if not script:
+        return None
+    series = pipeline.get_series(script.series_id) if script.series_id else None
+    return pipeline.get_effective_llm_backend(script, series)
+
+
 class PolishVideoPromptRequest(BaseModel):
     draft_prompt: str
     feedback: str = Field("", max_length=2000)  # User feedback for iterative refinement
@@ -1956,8 +2003,16 @@ async def polish_video_prompt(request: PolishVideoPromptRequest):
     """Polishes a video generation prompt using LLM. Returns bilingual prompts."""
     try:
         custom_prompt = _get_custom_prompt(request.script_id, "video_polish")
+        llm_model = _get_effective_llm_model_for_script(request.script_id)
+        llm_backend = _get_effective_llm_backend_for_script(request.script_id)
         processor = ScriptProcessor()
-        result = processor.polish_video_prompt(request.draft_prompt, request.feedback, custom_prompt)
+        result = processor.polish_video_prompt(
+            request.draft_prompt,
+            request.feedback,
+            custom_prompt,
+            llm_model=llm_model,
+            llm_backend=llm_backend,
+        )
         return {
             "prompt_cn": result.get("prompt_cn", ""),
             "prompt_en": result.get("prompt_en", "")
@@ -1984,9 +2039,18 @@ async def polish_r2v_prompt(request: PolishR2VPromptRequest):
     """Polishes a R2V (Reference-to-Video) prompt using LLM. Returns bilingual prompts."""
     try:
         custom_prompt = _get_custom_prompt(request.script_id, "r2v_polish")
+        llm_model = _get_effective_llm_model_for_script(request.script_id)
+        llm_backend = _get_effective_llm_backend_for_script(request.script_id)
         processor = ScriptProcessor()
         slot_info = [{"description": s.description} for s in request.slots]
-        result = processor.polish_r2v_prompt(request.draft_prompt, slot_info, request.feedback, custom_prompt)
+        result = processor.polish_r2v_prompt(
+            request.draft_prompt,
+            slot_info,
+            request.feedback,
+            custom_prompt,
+            llm_model=llm_model,
+            llm_backend=llm_backend,
+        )
         return {
             "prompt_cn": result.get("prompt_cn", ""),
             "prompt_en": result.get("prompt_en", "")
@@ -2013,14 +2077,19 @@ async def get_env_config():
 
         return {
             "DASHSCOPE_API_KEY": os.getenv("DASHSCOPE_API_KEY", ""),
-            "ALIBABA_CLOUD_ACCESS_KEY_ID": os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID", ""),
-            "ALIBABA_CLOUD_ACCESS_KEY_SECRET": os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET", ""),
-            "OSS_BUCKET_NAME": os.getenv("OSS_BUCKET_NAME", ""),
-            "OSS_ENDPOINT": os.getenv("OSS_ENDPOINT", ""),
-            "OSS_BASE_PATH": os.getenv("OSS_BASE_PATH", ""),
+            "MINIO_ENDPOINT": os.getenv("MINIO_ENDPOINT", ""),
+            "MINIO_ACCESS_KEY": os.getenv("MINIO_ACCESS_KEY", ""),
+            "MINIO_SECRET_KEY": os.getenv("MINIO_SECRET_KEY", ""),
+            "MINIO_BUCKET": os.getenv("MINIO_BUCKET", ""),
+            "MINIO_USE_SSL": os.getenv("MINIO_USE_SSL", ""),
+            "MINIO_BASE_PATH": os.getenv("MINIO_BASE_PATH", ""),
+            "MINIO_REGION": os.getenv("MINIO_REGION", ""),
+            "MINIO_PUBLIC_ENDPOINT": os.getenv("MINIO_PUBLIC_ENDPOINT", ""),
+            "MINIO_PUBLIC_USE_SSL": os.getenv("MINIO_PUBLIC_USE_SSL", ""),
             "KLING_ACCESS_KEY": os.getenv("KLING_ACCESS_KEY", ""),
             "KLING_SECRET_KEY": os.getenv("KLING_SECRET_KEY", ""),
             "VIDU_API_KEY": os.getenv("VIDU_API_KEY", ""),
+            "ARK_API_KEY": os.getenv("ARK_API_KEY", ""),
             "KLING_PROVIDER_MODE": _normalize_provider_mode(os.getenv("KLING_PROVIDER_MODE")),
             "VIDU_PROVIDER_MODE": _normalize_provider_mode(os.getenv("VIDU_PROVIDER_MODE")),
             "PIXVERSE_PROVIDER_MODE": _normalize_provider_mode(os.getenv("PIXVERSE_PROVIDER_MODE")),

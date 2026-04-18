@@ -13,17 +13,20 @@ interface EnvConfigDialogProps {
 
 type EnvConfig = EnvConfigPayload & {
   DASHSCOPE_API_KEY: string;
-  ALIBABA_CLOUD_ACCESS_KEY_ID: string;
-  ALIBABA_CLOUD_ACCESS_KEY_SECRET: string;
-  OSS_BUCKET_NAME: string;
-  OSS_ENDPOINT: string;
-  OSS_BASE_PATH: string;
+  MINIO_ENDPOINT: string;
+  MINIO_ACCESS_KEY: string;
+  MINIO_SECRET_KEY: string;
+  MINIO_BUCKET: string;
+  MINIO_USE_SSL: string;
+  MINIO_BASE_PATH: string;
+  MINIO_REGION: string;
   KLING_PROVIDER_MODE: ProviderMode;
   VIDU_PROVIDER_MODE: ProviderMode;
   PIXVERSE_PROVIDER_MODE: ProviderMode;
   KLING_ACCESS_KEY: string;
   KLING_SECRET_KEY: string;
   VIDU_API_KEY: string;
+  ARK_API_KEY: string;
   endpoint_overrides: Record<string, string>;
 };
 
@@ -35,17 +38,20 @@ const ENDPOINT_PROVIDERS = [
 
 const DEFAULT_CONFIG: EnvConfig = {
   DASHSCOPE_API_KEY: "",
-  ALIBABA_CLOUD_ACCESS_KEY_ID: "",
-  ALIBABA_CLOUD_ACCESS_KEY_SECRET: "",
-  OSS_BUCKET_NAME: "",
-  OSS_ENDPOINT: "",
-  OSS_BASE_PATH: "",
+  MINIO_ENDPOINT: "",
+  MINIO_ACCESS_KEY: "",
+  MINIO_SECRET_KEY: "",
+  MINIO_BUCKET: "",
+  MINIO_USE_SSL: "false",
+  MINIO_BASE_PATH: "",
+  MINIO_REGION: "",
   KLING_PROVIDER_MODE: "dashscope",
   VIDU_PROVIDER_MODE: "dashscope",
   PIXVERSE_PROVIDER_MODE: "dashscope",
   KLING_ACCESS_KEY: "",
   KLING_SECRET_KEY: "",
   VIDU_API_KEY: "",
+  ARK_API_KEY: "",
   endpoint_overrides: {},
 };
 
@@ -180,7 +186,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
               </div>
               <div>
                 <h2 className="text-lg font-bold text-white">Environment Configuration</h2>
-                <p className="text-xs text-gray-500">DashScope-first setup, with optional OSS mirror and vendor-direct routing</p>
+                <p className="text-xs text-gray-500">DashScope-first setup, with optional MinIO storage and vendor-direct routing</p>
               </div>
             </div>
             <button
@@ -195,7 +201,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {isRequired && (
               <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-xs text-yellow-300">
-                DashScope API Key is required before using the app. OSS and vendor keys are optional unless you select vendor-direct mode.
+                DashScope API Key is required before using the app. MinIO and vendor keys are optional unless you select vendor-direct mode.
               </div>
             )}
             {isRequired && !canClose && (
@@ -229,92 +235,77 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                   />
                 </div>
 
-                <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
-                  <div className="text-xs text-gray-400">
-                    Storage is local-first by default. OSS credentials are optional and only used as a cloud mirror.
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Alibaba Cloud Access Key ID
-                    </label>
-                    <input
-                      type="password"
-                      value={config.ALIBABA_CLOUD_ACCESS_KEY_ID}
-                      onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_ID", e.target.value)}
-                      placeholder="Optional, used when OSS mirror is enabled"
-                      className={inputClass}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Alibaba Cloud Access Key Secret
-                    </label>
-                    <input
-                      type="password"
-                      value={config.ALIBABA_CLOUD_ACCESS_KEY_SECRET}
-                      onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_SECRET", e.target.value)}
-                      placeholder="Optional, used when OSS mirror is enabled"
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-
                 <div className="pt-4 border-t border-white/10">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-white">OSS Mirror (Optional)</h3>
-                      <p className="text-[10px] text-gray-500 mt-1">When configured, generated media is stored locally and mirrored to OSS.</p>
-                    </div>
-                    <a
-                      href="https://oss.console.aliyun.com/overview"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-primary hover:text-primary/80 transition-colors"
-                    >
-                      Open OSS Console &rarr;
-                    </a>
+                  <div className="mb-4">
+                    <h3 className="text-sm font-bold text-white">MinIO / S3 (Optional)</h3>
+                    <p className="text-[10px] text-gray-500 mt-1">S3-compatible storage. Local-first; uploads go to MinIO when configured.</p>
                   </div>
 
                   <div className="space-y-4">
                     <div>
-                      <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                        <span>OSS Bucket Name</span>
-                        <span className="text-gray-600 font-normal text-xs">e.g. my-comic-bucket</span>
-                      </label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_ENDPOINT</label>
                       <input
                         type="text"
-                        value={config.OSS_BUCKET_NAME}
-                        onChange={(e) => handleChange("OSS_BUCKET_NAME", e.target.value)}
-                        placeholder="your_bucket_name (optional)"
+                        value={config.MINIO_ENDPOINT}
+                        onChange={(e) => handleChange("MINIO_ENDPOINT", e.target.value)}
+                        placeholder="127.0.0.1:9000"
                         className={inputClass}
                       />
                     </div>
-
                     <div>
-                      <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                        <span>OSS Endpoint</span>
-                        <span className="text-gray-600 font-normal text-xs">e.g. oss-cn-hangzhou.aliyuncs.com</span>
-                      </label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_ACCESS_KEY</label>
                       <input
-                        type="text"
-                        value={config.OSS_ENDPOINT}
-                        onChange={(e) => handleChange("OSS_ENDPOINT", e.target.value)}
-                        placeholder="oss-cn-beijing.aliyuncs.com (optional)"
+                        type="password"
+                        value={config.MINIO_ACCESS_KEY}
+                        onChange={(e) => handleChange("MINIO_ACCESS_KEY", e.target.value)}
                         className={inputClass}
                       />
                     </div>
-
                     <div>
-                      <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                        <span>OSS Base Path</span>
-                        <span className="text-gray-600 font-normal text-xs">e.g. lumenx</span>
-                      </label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_SECRET_KEY</label>
+                      <input
+                        type="password"
+                        value={config.MINIO_SECRET_KEY}
+                        onChange={(e) => handleChange("MINIO_SECRET_KEY", e.target.value)}
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_BUCKET</label>
                       <input
                         type="text"
-                        value={config.OSS_BASE_PATH}
-                        onChange={(e) => handleChange("OSS_BASE_PATH", e.target.value)}
+                        value={config.MINIO_BUCKET}
+                        onChange={(e) => handleChange("MINIO_BUCKET", e.target.value)}
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_USE_SSL</label>
+                      <input
+                        type="text"
+                        value={config.MINIO_USE_SSL}
+                        onChange={(e) => handleChange("MINIO_USE_SSL", e.target.value)}
+                        placeholder="false"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_BASE_PATH</label>
+                      <input
+                        type="text"
+                        value={config.MINIO_BASE_PATH}
+                        onChange={(e) => handleChange("MINIO_BASE_PATH", e.target.value)}
                         placeholder="lumenx"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_REGION (optional)</label>
+                      <input
+                        type="text"
+                        value={config.MINIO_REGION}
+                        onChange={(e) => handleChange("MINIO_REGION", e.target.value)}
+                        placeholder="us-east-1"
                         className={inputClass}
                       />
                     </div>
@@ -419,6 +410,26 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                         />
                       </div>
                     )}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-white/10">
+                  <h3 className="text-sm font-bold text-white mb-4">Volcengine Ark (Seedance)</h3>
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
+                    <p className="text-xs text-gray-500">
+                      For video models with id <code className="text-gray-400">doubao-*</code> or{" "}
+                      <code className="text-gray-400">seedance*</code>. Optional otherwise.
+                    </p>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">ARK API Key</label>
+                      <input
+                        type="password"
+                        value={config.ARK_API_KEY}
+                        onChange={(e) => handleChange("ARK_API_KEY", e.target.value)}
+                        placeholder="Volcengine Ark API Key"
+                        className={inputClass}
+                      />
+                    </div>
                   </div>
                 </div>
 

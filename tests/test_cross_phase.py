@@ -307,6 +307,47 @@ class TestModelSettingsIntegration:
         assert updated.model_settings.i2i_model == "wan2.6-image"  # preserved
         assert updated.model_settings.storyboard_aspect_ratio == "16:9"  # preserved
 
+    def test_get_effective_llm_model_episode_over_series(self, pipeline):
+        """Episode llm_model overrides series default."""
+        series = pipeline.create_series("S")
+        ms_series = series.model_settings.model_copy(update={"llm_model": "qwen-plus"})
+        pipeline.update_series(series.id, {"model_settings": ms_series})
+
+        now = time.time()
+        ep = Script(
+            id="ep1",
+            title="E1",
+            original_text="x",
+            created_at=now,
+            updated_at=now,
+            model_settings=ModelSettings(llm_model="qwen-max"),
+            series_id=series.id,
+        )
+        pipeline.scripts[ep.id] = ep
+        assert pipeline.get_effective_llm_model(ep, series) == "qwen-max"
+
+        ep2 = Script(
+            id="ep2",
+            title="E2",
+            original_text="x",
+            created_at=now,
+            updated_at=now,
+            model_settings=ModelSettings(llm_model=""),
+            series_id=series.id,
+        )
+        assert pipeline.get_effective_llm_model(ep2, series) == "qwen-plus"
+
+        ep3 = Script(
+            id="ep3",
+            title="E3",
+            original_text="x",
+            created_at=now,
+            updated_at=now,
+            model_settings=ModelSettings(),
+            series_id=None,
+        )
+        assert pipeline.get_effective_llm_model(ep3, None) is None
+
     def test_model_settings_not_overwritten_by_id_or_created_at(self, pipeline):
         """update_series should not allow overwriting protected fields."""
         s = pipeline.create_series("S")

@@ -16,6 +16,12 @@ def test_classify_local_relative_path():
     assert classify_media_ref("uploads/foo.png") == "local_path"
 
 
+def test_classify_windows_backslashes_and_output_prefix():
+    """Paths from os.path.join('output', rel) on Windows must classify as local."""
+    assert classify_media_ref("output/assets/characters/x.png") == "local_path"
+    assert classify_media_ref("output\\assets\\characters\\x.png") == "local_path"
+
+
 def test_classify_local_absolute_path_under_output():
     abs_path = str(_project_root() / "output" / "uploads" / "foo.png")
     assert classify_media_ref(abs_path) == "local_path"

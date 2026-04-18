@@ -1,24 +1,27 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Save, Loader2, Key, ChevronDown, ChevronRight, Settings, MessageSquareCode } from "lucide-react";
+import { Save, Loader2, Key, ChevronDown, ChevronRight, Settings, MessageSquareCode, MessageSquare } from "lucide-react";
 import { api, type EnvConfigPayload, type ProviderMode } from "@/lib/api";
-import { T2I_MODELS, I2I_MODELS, I2V_MODELS, ASPECT_RATIOS } from "@/store/projectStore";
+import { T2I_MODELS, I2I_MODELS, I2V_MODELS, ASPECT_RATIOS, LLM_MODELS } from "@/store/projectStore";
 import { Image, Video, Layout, Check, User, Building, Box } from "lucide-react";
 
 type EnvConfig = EnvConfigPayload & {
   DASHSCOPE_API_KEY: string;
-  ALIBABA_CLOUD_ACCESS_KEY_ID: string;
-  ALIBABA_CLOUD_ACCESS_KEY_SECRET: string;
-  OSS_BUCKET_NAME: string;
-  OSS_ENDPOINT: string;
-  OSS_BASE_PATH: string;
+  MINIO_ENDPOINT: string;
+  MINIO_ACCESS_KEY: string;
+  MINIO_SECRET_KEY: string;
+  MINIO_BUCKET: string;
+  MINIO_USE_SSL: string;
+  MINIO_BASE_PATH: string;
+  MINIO_REGION: string;
   KLING_PROVIDER_MODE: ProviderMode;
   VIDU_PROVIDER_MODE: ProviderMode;
   PIXVERSE_PROVIDER_MODE: ProviderMode;
   KLING_ACCESS_KEY: string;
   KLING_SECRET_KEY: string;
   VIDU_API_KEY: string;
+  ARK_API_KEY: string;
   endpoint_overrides: Record<string, string>;
 };
 
@@ -30,17 +33,20 @@ const ENDPOINT_PROVIDERS = [
 
 const DEFAULT_CONFIG: EnvConfig = {
   DASHSCOPE_API_KEY: "",
-  ALIBABA_CLOUD_ACCESS_KEY_ID: "",
-  ALIBABA_CLOUD_ACCESS_KEY_SECRET: "",
-  OSS_BUCKET_NAME: "",
-  OSS_ENDPOINT: "",
-  OSS_BASE_PATH: "",
+  MINIO_ENDPOINT: "",
+  MINIO_ACCESS_KEY: "",
+  MINIO_SECRET_KEY: "",
+  MINIO_BUCKET: "",
+  MINIO_USE_SSL: "false",
+  MINIO_BASE_PATH: "",
+  MINIO_REGION: "",
   KLING_PROVIDER_MODE: "dashscope",
   VIDU_PROVIDER_MODE: "dashscope",
   PIXVERSE_PROVIDER_MODE: "dashscope",
   KLING_ACCESS_KEY: "",
   KLING_SECRET_KEY: "",
   VIDU_API_KEY: "",
+  ARK_API_KEY: "",
   endpoint_overrides: {},
 };
 
@@ -87,6 +93,7 @@ interface DefaultModelSettings {
   scene_aspect_ratio: string;
   prop_aspect_ratio: string;
   storyboard_aspect_ratio: string;
+  llm_model: string;
 }
 
 interface DefaultPromptConfig {
@@ -123,6 +130,7 @@ export default function SettingsPage() {
       scene_aspect_ratio: "16:9",
       prop_aspect_ratio: "1:1",
       storyboard_aspect_ratio: "16:9",
+      llm_model: "",
     })
   );
 
@@ -204,7 +212,7 @@ export default function SettingsPage() {
           </div>
           <div>
             <h2 className="text-lg font-bold text-white">API 配置</h2>
-            <p className="text-xs text-gray-500">DashScope-first setup with optional OSS mirror and provider-direct routing</p>
+            <p className="text-xs text-gray-500">DashScope-first setup with optional MinIO (S3) storage and provider-direct routing</p>
           </div>
         </div>
 
@@ -227,37 +235,37 @@ export default function SettingsPage() {
               <input type="password" value={config.DASHSCOPE_API_KEY} onChange={(e) => handleChange("DASHSCOPE_API_KEY", e.target.value)} placeholder="Required for DashScope-first model routing" className={inputClass} />
             </div>
 
-            <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
-              <p className="text-xs text-gray-400">Storage is local-first by default. These credentials are only needed when enabling OSS mirror.</p>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Alibaba Cloud Access Key ID</label>
-                <input type="password" value={config.ALIBABA_CLOUD_ACCESS_KEY_ID} onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_ID", e.target.value)} placeholder="Optional, for OSS mirror" className={inputClass} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Alibaba Cloud Access Key Secret</label>
-                <input type="password" value={config.ALIBABA_CLOUD_ACCESS_KEY_SECRET} onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_SECRET", e.target.value)} placeholder="Optional, for OSS mirror" className={inputClass} />
-              </div>
-            </div>
-
             <div className="pt-4 border-t border-white/10">
-              <h3 className="text-sm font-bold text-white mb-2">OSS Mirror (Optional)</h3>
-              <p className="text-[10px] text-gray-500 mb-4">Generated assets always save locally first. Configure OSS to keep an optional cloud mirror.</p>
+              <h3 className="text-sm font-bold text-white mb-2">MinIO / S3 存储（可选）</h3>
+              <p className="text-[10px] text-gray-500 mb-4">默认先落本地。填写 MinIO 后会上传对象存储并返回预签名 URL。</p>
               <div className="space-y-4">
                 <div>
-                  <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                    <span>OSS Bucket Name</span>
-                  </label>
-                  <input type="text" value={config.OSS_BUCKET_NAME} onChange={(e) => handleChange("OSS_BUCKET_NAME", e.target.value)} placeholder="your_bucket_name (optional)" className={inputClass} />
+                  <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_ENDPOINT</label>
+                  <input type="text" value={config.MINIO_ENDPOINT} onChange={(e) => handleChange("MINIO_ENDPOINT", e.target.value)} placeholder="127.0.0.1:9000" className={inputClass} />
                 </div>
                 <div>
-                  <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                    <span>OSS Endpoint</span>
-                  </label>
-                  <input type="text" value={config.OSS_ENDPOINT} onChange={(e) => handleChange("OSS_ENDPOINT", e.target.value)} placeholder="oss-cn-beijing.aliyuncs.com (optional)" className={inputClass} />
+                  <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_ACCESS_KEY</label>
+                  <input type="password" value={config.MINIO_ACCESS_KEY} onChange={(e) => handleChange("MINIO_ACCESS_KEY", e.target.value)} className={inputClass} />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">OSS Base Path</label>
-                  <input type="text" value={config.OSS_BASE_PATH} onChange={(e) => handleChange("OSS_BASE_PATH", e.target.value)} placeholder="lumenx" className={inputClass} />
+                  <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_SECRET_KEY</label>
+                  <input type="password" value={config.MINIO_SECRET_KEY} onChange={(e) => handleChange("MINIO_SECRET_KEY", e.target.value)} className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_BUCKET</label>
+                  <input type="text" value={config.MINIO_BUCKET} onChange={(e) => handleChange("MINIO_BUCKET", e.target.value)} placeholder="bucket 名称" className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_USE_SSL</label>
+                  <input type="text" value={config.MINIO_USE_SSL} onChange={(e) => handleChange("MINIO_USE_SSL", e.target.value)} placeholder="false" className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_BASE_PATH</label>
+                  <input type="text" value={config.MINIO_BASE_PATH} onChange={(e) => handleChange("MINIO_BASE_PATH", e.target.value)} placeholder="lumenx" className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">MINIO_REGION（可选）</label>
+                  <input type="text" value={config.MINIO_REGION} onChange={(e) => handleChange("MINIO_REGION", e.target.value)} placeholder="us-east-1" className={inputClass} />
                 </div>
               </div>
             </div>
@@ -315,6 +323,26 @@ export default function SettingsPage() {
             </div>
 
             <div className="pt-4 border-t border-white/10">
+              <h3 className="text-sm font-bold text-white mb-4">Volcengine Ark (Seedance)</h3>
+              <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
+                <p className="text-xs text-gray-500">
+                  Used when video model id starts with <code className="text-gray-400">doubao-</code> or{" "}
+                  <code className="text-gray-400">seedance</code>. Optional if you do not use Ark I2V.
+                </p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">ARK API Key</label>
+                  <input
+                    type="password"
+                    value={config.ARK_API_KEY}
+                    onChange={(e) => handleChange("ARK_API_KEY", e.target.value)}
+                    placeholder="Volcengine Ark API Key"
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-white/10">
               <button type="button" onClick={() => setEndpointsOpen(!endpointsOpen)} className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-gray-200 transition-colors">
                 {endpointsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 Advanced: API Endpoints
@@ -363,8 +391,39 @@ export default function SettingsPage() {
 
         <div className="space-y-5">
           <div className="flex items-center gap-2 text-sm font-bold text-white">
-            <Image size={16} className="text-green-400" />
-            <span>Text-to-Image Model</span>
+            <MessageSquare size={16} className="text-amber-400" />
+            <span>Text / LLM (script & polish)</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {LLM_MODELS.map((model) => {
+              const lm = modelSettings.llm_model ?? "";
+              const selected = (lm === "" && model.id === "") || lm === model.id;
+              return (
+                <button
+                  key={model.id || "default"}
+                  type="button"
+                  onClick={() => setModelSettings((s) => ({ ...s, llm_model: model.id }))}
+                  className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${
+                    selected ? "border-amber-500/50 bg-amber-500/10" : "border-white/10 hover:border-white/20 bg-white/5"
+                  }`}
+                >
+                  {selected && (
+                    <div className="absolute top-2 right-2">
+                      <Check size={14} className="text-amber-400" />
+                    </div>
+                  )}
+                  <span className="text-sm font-medium text-white">{model.name}</span>
+                  <span className="text-xs text-gray-500">{model.description}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="border-t border-white/10 pt-4">
+            <div className="flex items-center gap-2 text-sm font-bold text-white">
+              <Image size={16} className="text-green-400" />
+              <span>Text-to-Image Model</span>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
             {T2I_MODELS.map((model) => (

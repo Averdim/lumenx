@@ -10,6 +10,23 @@ from ...utils.oss_utils import is_object_key
 
 logger = get_logger(__name__)
 
+
+def _normalize_reference_for_wan(ref_url: str) -> str:
+    """
+    Build ref_image_path for Wan/I2I from stored variant URLs.
+
+    Stored values may be: OSS object keys, full https URLs (signed OSS), or paths under output/
+    (e.g. assets/...). Full URLs must not be prefixed with output/, or resolution fails.
+    """
+    if not ref_url:
+        return ref_url
+    if is_object_key(ref_url):
+        return ref_url
+    if ref_url.startswith(("http://", "https://")):
+        return ref_url
+    return os.path.join("output", ref_url.lstrip("/"))
+
+
 def cleanup_old_variants(image_asset: ImageAsset) -> None:
     """
     Enforce variant limit: keep at most MAX_VARIANTS_PER_ASSET non-favorited variants.
@@ -102,8 +119,11 @@ class AssetGenerator:
                             if is_object_key(ref_url):
                                 ref_image_path = ref_url
                                 logger.debug(f"Reverse generation: Using uploaded three_views as reference: {ref_url}")
+                            elif ref_url.startswith(("http://", "https://")):
+                                ref_image_path = ref_url
+                                logger.debug(f"Reverse generation: Using uploaded three_views URL as reference: {ref_url[:80]}...")
                             else:
-                                local_path = os.path.join("output", ref_url)
+                                local_path = os.path.join("output", ref_url.lstrip("/"))
                                 if os.path.exists(local_path):
                                     ref_image_path = local_path
                                     logger.debug(f"Reverse generation: Using local three_views as reference: {local_path}")
@@ -119,8 +139,11 @@ class AssetGenerator:
                             if is_object_key(ref_url):
                                 ref_image_path = ref_url
                                 logger.debug(f"Reverse generation: Using uploaded headshot as reference: {ref_url}")
+                            elif ref_url.startswith(("http://", "https://")):
+                                ref_image_path = ref_url
+                                logger.debug(f"Reverse generation: Using uploaded headshot URL as reference: {ref_url[:80]}...")
                             else:
-                                local_path = os.path.join("output", ref_url)
+                                local_path = os.path.join("output", ref_url.lstrip("/"))
                                 if os.path.exists(local_path):
                                     ref_image_path = local_path
                                     logger.debug(f"Reverse generation: Using local headshot as reference: {local_path}")
@@ -258,18 +281,11 @@ class AssetGenerator:
             if generation_type in ["three_view", "headshot"] and not current_full_body_url and not uploaded_reference_url:
                 raise ValueError("Full body image is required to generate derived assets. Upload an image or generate a full body first.")
             
-            # Handle reference image path: could be OSS Object Key or local path
-            # Prioritize full body, fall back to uploaded reference
+            # Handle reference image path: OSS key, https URL, or local path under output/
             reference_url = current_full_body_url or uploaded_reference_url
             if reference_url:
-                if is_object_key(reference_url):
-                    # OSS Object Key - pass directly, image.py will handle signing
-                    fullbody_path = reference_url
-                    logger.debug(f"Using OSS Object Key for reference: {reference_url}")
-                else:
-                    # Local relative path - prepend output directory
-                    fullbody_path = os.path.join("output", reference_url)
-                    logger.debug(f"Using local path for reference: {fullbody_path}")
+                fullbody_path = _normalize_reference_for_wan(reference_url)
+                logger.debug(f"Using reference for derived assets: {fullbody_path[:120] if fullbody_path else reference_url!r}...")
             else:
                 fullbody_path = None
 

@@ -5,6 +5,7 @@ import { useProjectStore } from "@/store/projectStore";
 import VideoCreator from "./VideoCreator";
 import VideoSidebar from "./VideoSidebar";
 import { api, VideoTask } from "@/lib/api";
+import type { SeedanceI2vMode } from "@/store/projectStore";
 
 export default function VideoGenerator() {
     const currentProject = useProjectStore((state) => state.currentProject);
@@ -40,6 +41,8 @@ export default function VideoGenerator() {
         // Vidu params
         viduAudio: true,
         movementAmplitude: "auto" as string,
+        referenceImageUrls: [] as string[],
+        seedanceI2vMode: "first_frame" as SeedanceI2vMode,
     });
 
     // Sync model from project settings when project changes
@@ -84,8 +87,11 @@ export default function VideoGenerator() {
     };
 
     const handleRemix = (task: VideoTask) => {
+        const refImages = [task.image_url, ...(task.reference_image_urls || [])].filter(Boolean);
         setRemixData({
             image_url: task.image_url,
+            reference_image_urls: task.reference_image_urls,
+            seedance_i2v_mode: task.seedance_i2v_mode,
             prompt: task.prompt,
             negative_prompt: task.negative_prompt,
             seed: task.seed,
@@ -104,6 +110,8 @@ export default function VideoGenerator() {
             audioUrl: task.audio_url || "",
             promptExtend: task.prompt_extend ?? true,
             negativePrompt: task.negative_prompt || "",
+            referenceImageUrls: refImages,
+            seedanceI2vMode: (task.seedance_i2v_mode as SeedanceI2vMode) || p.seedanceI2vMode,
             // Reset motion params as they are not stored directly in task (they are in prompt)
             cameraMovement: "none",
             subjectMotion: "still"

@@ -11,17 +11,20 @@ type ProviderMode = "dashscope" | "vendor";
 
 interface EnvConfig {
   DASHSCOPE_API_KEY: string;
-  ALIBABA_CLOUD_ACCESS_KEY_ID: string;
-  ALIBABA_CLOUD_ACCESS_KEY_SECRET: string;
-  OSS_BUCKET_NAME: string;
-  OSS_ENDPOINT: string;
-  OSS_BASE_PATH: string;
+  MINIO_ENDPOINT: string;
+  MINIO_ACCESS_KEY: string;
+  MINIO_SECRET_KEY: string;
+  MINIO_BUCKET: string;
+  MINIO_USE_SSL: string;
+  MINIO_BASE_PATH: string;
+  MINIO_REGION: string;
   KLING_PROVIDER_MODE: ProviderMode;
   VIDU_PROVIDER_MODE: ProviderMode;
   PIXVERSE_PROVIDER_MODE: ProviderMode;
   KLING_ACCESS_KEY: string;
   KLING_SECRET_KEY: string;
   VIDU_API_KEY: string;
+  ARK_API_KEY: string;
   endpoint_overrides: Record<string, string>;
   [key: string]: string | Record<string, string>;
 }
@@ -34,17 +37,20 @@ const ENDPOINT_PROVIDERS = [
 
 const DEFAULT_CONFIG: EnvConfig = {
   DASHSCOPE_API_KEY: "",
-  ALIBABA_CLOUD_ACCESS_KEY_ID: "",
-  ALIBABA_CLOUD_ACCESS_KEY_SECRET: "",
-  OSS_BUCKET_NAME: "",
-  OSS_ENDPOINT: "",
-  OSS_BASE_PATH: "",
+  MINIO_ENDPOINT: "",
+  MINIO_ACCESS_KEY: "",
+  MINIO_SECRET_KEY: "",
+  MINIO_BUCKET: "",
+  MINIO_USE_SSL: "false",
+  MINIO_BASE_PATH: "",
+  MINIO_REGION: "",
   KLING_PROVIDER_MODE: "dashscope",
   VIDU_PROVIDER_MODE: "dashscope",
   PIXVERSE_PROVIDER_MODE: "dashscope",
   KLING_ACCESS_KEY: "",
   KLING_SECRET_KEY: "",
   VIDU_API_KEY: "",
+  ARK_API_KEY: "",
   endpoint_overrides: {},
 };
 
@@ -154,14 +160,14 @@ describe("validateRequiredFields", () => {
     expect(validateRequiredFields(valid)).toBe(true);
   });
 
-  it("does not require OSS or Alibaba credentials", () => {
+  it("does not require MinIO credentials", () => {
     const valid = {
       ...DEFAULT_CONFIG,
       DASHSCOPE_API_KEY: "sk-test",
-      ALIBABA_CLOUD_ACCESS_KEY_ID: "",
-      ALIBABA_CLOUD_ACCESS_KEY_SECRET: "",
-      OSS_BUCKET_NAME: "",
-      OSS_ENDPOINT: "",
+      MINIO_ENDPOINT: "",
+      MINIO_ACCESS_KEY: "",
+      MINIO_SECRET_KEY: "",
+      MINIO_BUCKET: "",
     };
     expect(validateRequiredFields(valid)).toBe(true);
   });

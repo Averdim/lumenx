@@ -69,9 +69,10 @@ class ComicGenPipeline:
         self.video_generation_tasks: Dict[str, Dict[str, Any]] = {}
         # Temporary cache for file import previews (import_id -> text)
         self._import_cache: Dict[str, str] = {}
-        # Cached model instances for Kling/Vidu (lazily initialized)
+        # Cached model instances for Kling/Vidu/Doubao-Ark (lazily initialized)
         self._kling_model = None
         self._vidu_model = None
+        self._doubao_model = None
 
     def _resolve_video_backend(self, model_name: str) -> str:
         try:
@@ -144,7 +145,12 @@ class ComicGenPipeline:
             raise ValueError("Script not found")
         
         # Parse the new text (this generates new entities with new IDs)
-        new_script = self.script_processor.parse_novel(existing_script.title, text)
+        series = self.series_store.get(existing_script.series_id) if existing_script.series_id else None
+        llm_model = self.get_effective_llm_model(existing_script, series)
+        llm_backend = self.get_effective_llm_backend(existing_script, series)
+        new_script = self.script_processor.parse_novel(
+            existing_script.title, text, llm_model=llm_model, llm_backend=llm_backend
+        )
         
         # Preserve the original script ID and timestamps
         new_script.id = existing_script.id
@@ -881,7 +887,12 @@ class ComicGenPipeline:
         }
 
         # Call LLM to analyze text (may raise RuntimeError on parse failure)
-        raw_frames = self.script_processor.analyze_to_storyboard(text, entities_json)
+        series = self.series_store.get(script.series_id) if script.series_id else None
+        llm_model = self.get_effective_llm_model(script, series)
+        llm_backend = self.get_effective_llm_backend(script, series)
+        raw_frames = self.script_processor.analyze_to_storyboard(
+            text, entities_json, llm_model=llm_model, llm_backend=llm_backend
+        )
 
         if not raw_frames:
             raise RuntimeError("AI 分镜分析未返回任何帧数据，请重试。")
@@ -967,8 +978,12 @@ class ComicGenPipeline:
         if custom_prompt == DEFAULT_STORYBOARD_POLISH_PROMPT:
             custom_prompt = ""
 
+        llm_model = self.get_effective_llm_model(script, series)
+        llm_backend = self.get_effective_llm_backend(script, series)
         # Call LLM to refine prompt
-        result = self.script_processor.polish_storyboard_prompt(raw_prompt, assets, feedback, custom_prompt)
+        result = self.script_processor.polish_storyboard_prompt(
+            raw_prompt, assets, feedback, custom_prompt, llm_model=llm_model, llm_backend=llm_backend
+        )
         
         # Find and update the frame
         frame_found = False
@@ -1393,7 +1408,62 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
-    def create_video_task(self, script_id: str, image_url: str, prompt: str, duration: int = 5, seed: int = None, resolution: str = "720p", generate_audio: bool = False, audio_url: str = None, prompt_extend: bool = True, negative_prompt: str = None, model: str = "wan2.6-i2v", frame_id: str = None, shot_type: str = "single", generation_mode: str = "i2v", reference_video_urls: list = None, mode: str = None, sound: str = None, cfg_scale: float = None, vidu_audio: bool = None, movement_amplitude: str = None) -> Tuple[Script, str]:
+    @staticmethod
+    def _is_seedance_2_video_model(model: str) -> bool:
+        m = (model or "").lower()
+        return "seedance-2-0" in m or "doubao-seedance-2-0" in m
+
+    @staticmethod
+    def _validate_seedance_i2v_inputs(
+        model: str,
+        generation_mode: str,
+        image_url: str,
+        reference_image_urls: list,
+        seedance_i2v_mode: str = None,
+    ) -> None:
+        if generation_mode == "r2v" or not ComicGenPipeline._is_seedance_2_video_model(model):
+            return
+        ref_list = list(reference_image_urls or [])
+        n_first = 1 if (image_url or "").strip() else 0
+        total = n_first + len(ref_list)
+        if total > 1 and not (seedance_i2v_mode or "").strip():
+            raise ValueError("多图 Seedance 任务需要指定 seedance_i2v_mode（first_last_frame 或 multimodal_ref）")
+        mode = (seedance_i2v_mode or "first_frame").strip()
+        if mode == "first_last_frame":
+            if total != 2:
+                raise ValueError("Seedance 首尾帧模式需要恰好 2 张图（第 1 张首帧，第 2 张尾帧）")
+        elif mode == "multimodal_ref":
+            if total < 1 or total > 9:
+                raise ValueError("Seedance 多模态参考需要 1～9 张参考图")
+        elif mode == "first_frame":
+            if total != 1:
+                raise ValueError("Seedance 首帧模式需要恰好 1 张参考图")
+        else:
+            raise ValueError(f"未知的 seedance_i2v_mode: {mode}")
+
+    def _snapshot_video_input_url(self, image_url: str, task_id: str, name_suffix: str = "") -> str:
+        """Copy a local output-relative image into video_inputs/; leave http URLs unchanged."""
+        if not image_url or image_url.startswith(("http://", "https://")):
+            return image_url
+        snapshot_url = image_url
+        try:
+            src_path = _safe_resolve_path("output", image_url)
+            if os.path.exists(src_path) and os.path.isfile(src_path):
+                snapshot_dir = os.path.join("output", "video_inputs")
+                os.makedirs(snapshot_dir, exist_ok=True)
+                ext = os.path.splitext(os.path.basename(image_url))[1] or ".png"
+                _validate_safe_id(task_id, "task_id")
+                snapshot_filename = f"{task_id}{name_suffix}{ext}"
+                snapshot_path = _safe_resolve_path(snapshot_dir, snapshot_filename)
+                import shutil
+
+                shutil.copy2(src_path, snapshot_path)
+                snapshot_url = f"video_inputs/{snapshot_filename}"
+        except Exception as e:
+            logger.error(f"Failed to snapshot input image {image_url}: {e}")
+        return snapshot_url
+
+    def create_video_task(self, script_id: str, image_url: str, prompt: str, duration: int = 5, seed: int = None, resolution: str = "720p", generate_audio: bool = False, audio_url: str = None, prompt_extend: bool = True, negative_prompt: str = None, model: str = "wan2.6-i2v", frame_id: str = None, shot_type: str = "single", generation_mode: str = "i2v", reference_video_urls: list = None, mode: str = None, sound: str = None, cfg_scale: float = None, vidu_audio: bool = None, movement_amplitude: str = None, reference_image_urls: list = None, seedance_i2v_mode: str = None) -> Tuple[Script, str]:
         """Creates a new video generation task."""
         script = self.get_script(script_id)
         if not script:
@@ -1404,34 +1474,17 @@ class ComicGenPipeline:
         # If R2V mode is selected, use the R2V model
         if generation_mode == "r2v":
             model = "wan2.6-r2v"
-        
-        # Snapshot the input image to ensure consistency
-        snapshot_url = image_url
-        try:
-            # Resolve source path
-            if image_url and not image_url.startswith("http"):
-                # Assume relative to output dir
-                src_path = _safe_resolve_path("output", image_url)
-                if os.path.exists(src_path) and os.path.isfile(src_path):
-                    # Create snapshot dir
-                    snapshot_dir = os.path.join("output", "video_inputs")
-                    os.makedirs(snapshot_dir, exist_ok=True)
 
-                    # Define snapshot path
-                    ext = os.path.splitext(os.path.basename(image_url))[1] or ".png"
-                    _validate_safe_id(task_id, "task_id")
-                    snapshot_filename = f"{task_id}{ext}"
-                    snapshot_path = _safe_resolve_path(snapshot_dir, snapshot_filename)
-                    
-                    # Copy file
-                    import shutil
-                    shutil.copy2(src_path, snapshot_path)
-                    
-                    # Update URL to relative path
-                    snapshot_url = f"video_inputs/{snapshot_filename}"
-        except Exception as e:
-            logger.error(f"Failed to snapshot input image: {e}")
-            # Fallback to original URL
+        ref_list = list(reference_image_urls or [])
+        self._validate_seedance_i2v_inputs(
+            model, generation_mode, image_url, ref_list, seedance_i2v_mode
+        )
+        
+        snapshot_url = self._snapshot_video_input_url(image_url, task_id, name_suffix="")
+        ref_snapshots = [
+            self._snapshot_video_input_url(ref, task_id, name_suffix=f"_ref{i+1}")
+            for i, ref in enumerate(ref_list)
+        ]
 
         task = VideoTask(
             id=task_id,
@@ -1456,6 +1509,8 @@ class ComicGenPipeline:
             cfg_scale=cfg_scale,
             vidu_audio=vidu_audio,
             movement_amplitude=movement_amplitude,
+            reference_image_urls=ref_snapshots,
+            seedance_i2v_mode=seedance_i2v_mode,
             created_at=time.time()
         )
         
@@ -2029,10 +2084,27 @@ class ComicGenPipeline:
             task.status = "processing"
             self._save_data()
             
-            # Download image to temp file
+            # Prepare image input(s) for vendor APIs (single download per URL)
             img_path = None
+            first_resolved = None
             if task.image_url:
-                img_path = self._download_temp_image(task.image_url)
+                first_resolved = self._download_temp_image(task.image_url)
+                img_path = first_resolved
+
+            image_inputs = []
+            if task.image_url and first_resolved is not None:
+                if os.path.isfile(first_resolved):
+                    image_inputs.append({"img_path": first_resolved, "img_url": None})
+                else:
+                    image_inputs.append({"img_path": None, "img_url": first_resolved})
+            for extra in task.reference_image_urls or []:
+                if not extra:
+                    continue
+                r = self._download_temp_image(extra)
+                if os.path.isfile(r):
+                    image_inputs.append({"img_path": r, "img_url": None})
+                else:
+                    image_inputs.append({"img_path": None, "img_url": r})
             
             # Generate video
             output_filename = f"video_{task_id}.mp4"
@@ -2073,6 +2145,32 @@ class ComicGenPipeline:
                 or model_name_lower.startswith("viduq2")
                 or model_name_lower.startswith("viduq3")
             )
+            # Volcengine Ark: doubao-* / seedance* (SeeDance I2V); requires ARK_API_KEY
+            use_ark_doubao = model_name_lower.startswith("doubao-") or model_name_lower.startswith(
+                "seedance"
+            )
+
+            route = (
+                "vendor_kling"
+                if use_vendor_kling
+                else "vendor_vidu"
+                if use_vendor_vidu
+                else "ark_doubao"
+                if use_ark_doubao
+                else "wanx_default"
+            )
+            logger.info(
+                "Video generation: task_id=%s model_id=%s backend=%s route=%s "
+                "generation_mode=%s duration=%ss seedance_i2v_mode=%s ref_images=%s",
+                task_id,
+                model_name or "(unset)",
+                backend,
+                route,
+                getattr(task, "generation_mode", None) or "i2v",
+                task.duration,
+                getattr(task, "seedance_i2v_mode", None) or "-",
+                len(task.reference_image_urls or []),
+            )
 
             if use_vendor_kling:
                 # Use Kling model (cached)
@@ -2109,6 +2207,23 @@ class ComicGenPipeline:
                     seed=task.seed or 0,
                     audio=task.vidu_audio if task.vidu_audio is not None else True,
                     movement_amplitude=task.movement_amplitude or "auto",
+                )
+            elif use_ark_doubao:
+                if self._doubao_model is None:
+                    from ...models.doubao import DoubaoModel
+
+                    self._doubao_model = DoubaoModel({})
+                video_path, _ = self._doubao_model.generate(
+                    prompt=task.prompt,
+                    output_path=output_path,
+                    img_url=img_url,
+                    img_path=img_path,
+                    model=task.model,
+                    duration=task.duration,
+                    resolution=task.resolution,
+                    generate_audio=final_generate_audio,
+                    image_inputs=image_inputs or None,
+                    seedance_i2v_mode=task.seedance_i2v_mode,
                 )
             else:
                 # Default: Wanx model
@@ -2555,7 +2670,19 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
-    def update_model_settings(self, script_id: str, t2i_model: str = None, i2i_model: str = None, i2v_model: str = None, character_aspect_ratio: str = None, scene_aspect_ratio: str = None, prop_aspect_ratio: str = None, storyboard_aspect_ratio: str = None) -> Script:
+    def update_model_settings(
+        self,
+        script_id: str,
+        t2i_model: str = None,
+        i2i_model: str = None,
+        i2v_model: str = None,
+        character_aspect_ratio: str = None,
+        scene_aspect_ratio: str = None,
+        prop_aspect_ratio: str = None,
+        storyboard_aspect_ratio: str = None,
+        llm_model: Optional[str] = None,
+        llm_backend: Optional[str] = None,
+    ) -> Script:
         """Updates the model settings for a script."""
         script = self.scripts.get(script_id)
         if not script:
@@ -2575,7 +2702,11 @@ class ComicGenPipeline:
             script.model_settings.prop_aspect_ratio = prop_aspect_ratio
         if storyboard_aspect_ratio:
             script.model_settings.storyboard_aspect_ratio = storyboard_aspect_ratio
-        
+        if llm_model is not None:
+            script.model_settings.llm_model = llm_model
+        if llm_backend is not None:
+            script.model_settings.llm_backend = llm_backend
+
         self._save_data()
         return script
 
@@ -2796,9 +2927,17 @@ class ComicGenPipeline:
     # File Import & Episode Splitting
     # ============================================================
 
-    def import_file_and_split(self, text: str, suggested_episodes: int = 3) -> List[Dict]:
+    def import_file_and_split(
+        self,
+        text: str,
+        suggested_episodes: int = 3,
+        llm_model: Optional[str] = None,
+        llm_backend: Optional[str] = None,
+    ) -> List[Dict]:
         """Split text into episodes using LLM. Returns episode preview data."""
-        return self.script_processor.split_into_episodes(text, suggested_episodes)
+        return self.script_processor.split_into_episodes(
+            text, suggested_episodes, llm_model=llm_model, llm_backend=llm_backend
+        )
 
     def create_series_from_import(self, title: str, text: str, episodes_data: List[Dict],
                                    description: str = "") -> Dict:
@@ -3057,3 +3196,28 @@ class ComicGenPipeline:
             if series_value.strip():
                 return series_value
         return defaults.get(prompt_type, "")
+
+    def get_effective_llm_model(self, episode: Script, series: Optional[Series] = None) -> Optional[str]:
+        """Episode model_settings.llm_model if set, else series default; None/blank → use LLM env default."""
+        if episode.model_settings:
+            v = (episode.model_settings.llm_model or "").strip()
+            if v:
+                return v
+        if series and series.model_settings:
+            v = (series.model_settings.llm_model or "").strip()
+            if v:
+                return v
+        return None
+
+    def get_effective_llm_backend(self, episode: Script, series: Optional[Series] = None) -> Optional[str]:
+        """Return 'dashscope' | 'openai' if forced; None = auto (model-prefix registry + LLM_PROVIDER fallback)."""
+        for ms in (
+            episode.model_settings if episode.model_settings else None,
+            series.model_settings if series and series.model_settings else None,
+        ):
+            if not ms:
+                continue
+            raw = (ms.llm_backend or "").strip().lower()
+            if raw in ("dashscope", "openai"):
+                return raw
+        return None

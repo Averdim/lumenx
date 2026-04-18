@@ -10,7 +10,7 @@ from src.utils.oss_utils import is_object_key, OSSImageUploader, get_oss_base_pa
 
 load_dotenv()
 
-print(f"OSS_BASE_PATH from env: {os.getenv('OSS_BASE_PATH')}")
+print(f"MINIO_BASE_PATH from env: {os.getenv('MINIO_BASE_PATH')}")
 print(f"get_oss_base_path(): {get_oss_base_path()}")
 
 test_values = [

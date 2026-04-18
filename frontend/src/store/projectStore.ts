@@ -137,11 +137,30 @@ export interface ModelSettings {
     scene_aspect_ratio: string;  // Aspect ratio for Scene generation
     prop_aspect_ratio: string;  // Aspect ratio for Prop generation
     storyboard_aspect_ratio: string;  // Aspect ratio for Storyboard generation
+    /** Chat/LLM model; empty string = server default (LLM_PROVIDER / OPENAI_MODEL / DashScope default) */
+    llm_model?: string;
+    /** auto = prefix registry; dashscope | openai = force channel */
+    llm_backend?: string;
 }
+
+/** Options for script analysis, polish, and style recommendation (OpenAI-compatible or DashScope names). */
+export const LLM_MODELS = [
+    { id: '', name: 'Default (server env)', description: 'Follows LLM_PROVIDER and OPENAI_MODEL / DashScope defaults' },
+    { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus', description: 'DashScope compatible-mode default' },
+    { id: 'qwen-plus', name: 'Qwen Plus', description: 'DashScope' },
+    { id: 'qwen-max', name: 'Qwen Max', description: 'DashScope' },
+    { id: 'gpt-5.2', name: 'GPT-5.2', description: '空氧等 OpenAI 兼容网关；LLM_PROVIDER=openai' },
+    { id: 'gemini2.5-flash', name: 'Gemini 2.5 Flash', description: 'Gemini 2.5 Flash' },
+];
 
 // Model options for dropdowns
 export const T2I_MODELS = [
     { id: 'wan2.6-t2i', name: 'Wan 2.6 T2I', description: 'Latest T2I model' },
+    {
+        id: 'gemini-3.1-flash-image-preview',
+        name: 'Gemini 3.1 Flash Image',
+        description: 'T2I via OpenAI-compatible gateway (IMAGE_OPENAI_* env)',
+    },
     { id: 'wan2.5-t2i-preview', name: 'Wan 2.5 T2I Preview', description: 'Default T2I' },
     { id: 'wan2.2-t2i-plus', name: 'Wan 2.2 T2I Plus', description: 'Higher quality' },
     { id: 'wan2.2-t2i-flash', name: 'Wan 2.2 T2I Flash', description: 'Faster generation' },
@@ -150,6 +169,11 @@ export const T2I_MODELS = [
 export const I2I_MODELS = [
     { id: 'wan2.6-image', name: 'Wan 2.6 Image', description: 'Latest I2I model (HTTP)' },
     { id: 'wan2.5-i2i-preview', name: 'Wan 2.5 I2I Preview', description: 'Default I2I' },
+    {
+        id: 'gemini-3.1-flash-image-preview',
+        name: 'Gemini 3.1 Flash Image',
+        description: 'I2I via OpenAI-compatible gateway (IMAGE_OPENAI_* env)',
+    },
 ];
 
 export type DurationConfig =
@@ -209,6 +233,11 @@ const VIDU_PARAMS: ModelParamSupport = {
     movementAmplitude: { options: ['auto', 'small', 'medium', 'large'], default: 'auto' },
 };
 
+/** Volcengine Ark — set ARK_API_KEY; override id in console if your inference endpoint differs */
+const ARK_SEEDANCE_PARAMS: ModelParamSupport = {
+    resolution: { options: ['480p', '720p', '1080p'], default: '720p' },
+};
+
 export const I2V_MODELS: I2VModelConfig[] = [
     { id: 'wan2.6-i2v', name: 'Wan 2.6 I2V / R2V', description: 'Latest model, supports R2V',
       duration: { type: 'slider', min: 2, max: 15, step: 1, default: 5 }, params: WAN26_PARAMS },
@@ -226,6 +255,10 @@ export const I2V_MODELS: I2VModelConfig[] = [
       duration: { type: 'slider', min: 1, max: 16, step: 1, default: 5 }, params: VIDU_PARAMS },
     { id: 'viduq3-turbo', name: 'Vidu Q3 Turbo', description: 'Vidu fast generation',
       duration: { type: 'slider', min: 1, max: 16, step: 1, default: 5 }, params: VIDU_PARAMS },
+    { id: 'doubao-seedance-2-0-260128', name: 'Seedance 2.0', description: 'Volcengine Ark I2V (Seedance 2.0); set ARK_API_KEY',
+      duration: { type: 'slider', min: 2, max: 10, step: 1, default: 5 }, params: ARK_SEEDANCE_PARAMS },
+    { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro', description: 'Volcengine Ark I2V (first frame only); set ARK_API_KEY',
+      duration: { type: 'slider', min: 2, max: 10, step: 1, default: 5 }, params: ARK_SEEDANCE_PARAMS },
 ];
 
 export const ASPECT_RATIOS = [
@@ -233,6 +266,14 @@ export const ASPECT_RATIOS = [
     { id: '16:9', name: '16:9', description: 'Landscape (1024*576)' },
     { id: '1:1', name: '1:1', description: 'Square (1024*1024)' },
 ];
+
+/** Volcengine Ark Seedance 2.0 I2V sub-modes */
+export type SeedanceI2vMode = 'first_frame' | 'first_last_frame' | 'multimodal_ref';
+
+export const SEEDANCE_20_MODEL_ID = 'doubao-seedance-2-0-260128' as const;
+
+/** Seedance 1.5 Pro (Ark): single first-frame I2V; multi-ref UI stays on {@link SEEDANCE_20_MODEL_ID} only. */
+export const SEEDANCE_15_MODEL_ID = 'doubao-seedance-1-5-pro-251215' as const;
 
 export interface VideoParams {
     resolution: string;
@@ -249,6 +290,9 @@ export interface VideoParams {
     shotType: string;
     generationMode: string;
     referenceVideoUrls: string[];
+    /** Ordered reference images for Seedance 2.0 (same keys/URLs as storyboard selection) */
+    referenceImageUrls: string[];
+    seedanceI2vMode: SeedanceI2vMode;
     // Kling
     mode: string;
     sound: boolean;
@@ -430,28 +474,15 @@ export const useProjectStore = create<ProjectStore>()(
                     set({ currentProject: cachedProject });
                 }
 
-                // Then fetch latest data from backend
+                // Then fetch latest data from backend (same base URL as api.ts: dev → :17177)
                 try {
-                    const API_URL = typeof window !== 'undefined'
-                        ? (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
-                        : 'http://localhost:8000';
-                    const response = await fetch(`${API_URL}/projects/${id}`);
-                    if (response.ok) {
-                        const rawData = await response.json();
-                        // Transform data to match frontend model (snake_case -> camelCase for specific fields)
-                        const latestProject = {
-                            ...rawData,
-                            originalText: rawData.original_text
-                        };
-
-                        // Update both currentProject and projects array with latest data
-                        set((state) => ({
-                            currentProject: latestProject,
-                            projects: state.projects.map((p) =>
-                                p.id === id ? latestProject : p
-                            ),
-                        }));
-                    }
+                    const latestProject = await api.getProject(id);
+                    set((state) => ({
+                        currentProject: latestProject,
+                        projects: state.projects.map((p) =>
+                            p.id === id ? latestProject : p
+                        ),
+                    }));
                 } catch (error) {
                     console.error('Failed to fetch latest project data:', error);
                     // Keep using cached version if fetch fails

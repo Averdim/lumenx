@@ -43,6 +43,7 @@ def _build_pipeline(task: VideoTask, wanx_model) -> ComicGenPipeline:
     pipeline._download_temp_image = lambda _: "/tmp/downloaded-kling.png"
     pipeline._kling_model = None
     pipeline._vidu_model = None
+    pipeline._doubao_model = None
     pipeline.video_generator = SimpleNamespace(model=wanx_model)
     pipeline.get_script = lambda script_id: pipeline.scripts.get(script_id)
     return pipeline

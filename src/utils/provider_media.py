@@ -1,8 +1,10 @@
 import base64
+import ipaddress
 import mimetypes
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Callable, Dict, List, Mapping, Optional, Sequence
+from urllib.parse import urlparse
 
 from .media_refs import (
     MEDIA_REF_BLOB_URL,
@@ -94,6 +96,34 @@ def _upload_then_sign(local_path: str, uploader, sub_path: str = _DASHSCOPE_TEMP
     return uploader.sign_url_for_api(object_key)
 
 
+def _presigned_url_unreachable_by_cloud_api(url: str) -> bool:
+    """
+    DashScope runs on Alibaba Cloud and must fetch reference image URLs.
+    Presigned URLs for local MinIO (127.0.0.1 / LAN) are never reachable from their servers.
+    """
+    if not url or not isinstance(url, str):
+        return False
+    try:
+        parsed = urlparse(url.strip())
+        host = (parsed.hostname or "").strip().lower()
+        if not host:
+            return False
+        if host == "localhost":
+            return True
+        if host in ("127.0.0.1", "::1"):
+            return True
+        try:
+            ip = ipaddress.ip_address(host)
+            return bool(ip.is_private or ip.is_loopback or ip.is_link_local)
+        except ValueError:
+            pass
+        if host.endswith(".local"):
+            return True
+        return False
+    except Exception:
+        return False
+
+
 def _resolved(value: str, *, source_ref: str, media_ref_type: str, headers: Optional[Dict[str, str]] = None) -> ResolvedMediaInput:
     return ResolvedMediaInput(
         value=value,
@@ -117,6 +147,12 @@ def _resolve_dashscope_image(
     if ref_type == MEDIA_REF_OBJECT_KEY:
         signed_url = _signed_url_from_object_key(ref, uploader)
         if signed_url:
+            if _presigned_url_unreachable_by_cloud_api(signed_url) and uploader and getattr(
+                uploader, "is_configured", False
+            ):
+                data_uri = uploader.object_to_data_uri(ref)
+                if data_uri:
+                    return _resolved(data_uri, source_ref=ref, media_ref_type=ref_type)
             return _resolved(signed_url, source_ref=ref, media_ref_type=ref_type)
         raise ValueError(
             "DashScope image input received an OSS object key but OSS is not configured. "
@@ -126,7 +162,7 @@ def _resolve_dashscope_image(
         if not local_path:
             raise ValueError(f"Unable to resolve local media path for '{ref}'")
         signed_url = _upload_then_sign(local_path, uploader)
-        if signed_url:
+        if signed_url and not _presigned_url_unreachable_by_cloud_api(signed_url):
             return _resolved(signed_url, source_ref=ref, media_ref_type=ref_type)
         return _resolved(_encode_image_as_data_uri(local_path), source_ref=ref, media_ref_type=ref_type)
     if ref_type == MEDIA_REF_BLOB_URL:
@@ -257,7 +293,11 @@ def resolve_media_input(
     )
     local_path = resolve_local_media_path(ref, project_root=project_root)
 
-    if mode in {"dashscope_multimodal_message", "dashscope_image_to_video"}:
+    if mode in {
+        "dashscope_multimodal_message",
+        "dashscope_image_to_video",
+        "openai_compatible_image_url",
+    }:
         return _resolve_dashscope_image(
             ref,
             ref_type,

@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional, List
 import base64
+import json
 import mimetypes
 import os
+import re
 import time
 import requests
 from http import HTTPStatus
@@ -16,6 +18,60 @@ from ..utils.provider_media import resolve_media_input
 from ..utils.provider_registry import resolve_provider_backend
 
 logger = get_logger(__name__)
+
+# OpenAI-compatible image generation (e.g. Gemini Flash Image via third-party gateway).
+# T2I only; I2I is not supported in this integration.
+GEMINI_FLASH_IMAGE_PREVIEW_MODEL = "gemini-3.1-flash-image-preview"
+
+# Map Wan-style "WxH" to Gemini/OpenRouter-style aspect_ratio when using image_config.
+_WAN_SIZE_TO_ASPECT_RATIO: Dict[str, str] = {
+    "1280*1280": "1:1",
+    "1024*1024": "1:1",
+    "832*1248": "2:3",
+    "1248*832": "3:2",
+    "864*1184": "3:4",
+    "1184*864": "4:3",
+    "896*1152": "4:5",
+    "1152*896": "5:4",
+    "768*1344": "9:16",
+    "1344*768": "16:9",
+    "1536*672": "21:9",
+}
+
+
+def _chat_completion_response_to_dict(response: Any) -> Dict[str, Any]:
+    """
+    Normalize OpenAI chat.completion return value to a dict.
+    Some gateways return raw JSON strings or objects without model_dump().
+    """
+    if isinstance(response, dict):
+        return response
+    if isinstance(response, str):
+        raw = response.strip()
+        if not raw:
+            raise RuntimeError(
+                "Chat completion returned an empty response. Check IMAGE_OPENAI_BASE_URL "
+                "(often must be https://host/v1), API key, model id, and that the gateway returns JSON."
+            )
+        try:
+            parsed: Any = json.loads(raw)
+        except json.JSONDecodeError:
+            # Some proxies return plain text (URL, markdown, or one-line body) instead of JSON.
+            return {"choices": [{"message": {"content": raw}}]}
+        if not isinstance(parsed, dict):
+            raise RuntimeError(f"Chat completion JSON must be an object, got {type(parsed)}")
+        return parsed
+    model_dump = getattr(response, "model_dump", None)
+    if callable(model_dump):
+        return model_dump()
+    dict_fn = getattr(response, "dict", None)
+    if callable(dict_fn):
+        return dict_fn()
+    raise RuntimeError(
+        f"Unexpected chat completion response type {type(response)}; "
+        "expected dict, JSON str, or object with model_dump()/dict()."
+    )
+
 
 class ImageGenModel(ABC):
     """Abstract base class for image generation models."""
@@ -87,7 +143,11 @@ class WanxImageModel(ImageGenModel):
         kwargs.pop('model_name', None)
         
         # Determine reference image limit based on model
-        ref_limit = 4 if final_model_name == 'wan2.6-image' else 3
+        ref_limit = (
+            4
+            if final_model_name in ("wan2.6-image", GEMINI_FLASH_IMAGE_PREVIEW_MODEL)
+            else 3
+        )
         if len(all_ref_paths) > ref_limit:
             logger.warning(f"Limiting reference images from {len(all_ref_paths)} to {ref_limit} for model {final_model_name}")
             all_ref_paths = all_ref_paths[:ref_limit]
@@ -98,8 +158,17 @@ class WanxImageModel(ImageGenModel):
 
         try:
             api_start_time = time.time()
+            # OpenAI-compatible chat image (separate env from LLM / DashScope)
+            if final_model_name == GEMINI_FLASH_IMAGE_PREVIEW_MODEL:
+                image_url = self._generate_openai_compatible_chat_image(
+                    prompt,
+                    size,
+                    negative_prompt,
+                    final_model_name,
+                    ref_image_paths=all_ref_paths if all_ref_paths else None,
+                )
             # Use HTTP API for wan2.6 models (SDK not supported yet)
-            if final_model_name == 'wan2.6-t2i':
+            elif final_model_name == 'wan2.6-t2i':
                 image_url = self._generate_wan26_http(prompt, size, n, negative_prompt)
             elif final_model_name == 'wan2.6-image':
                 # wan2.6-image for I2I (requires reference images)
@@ -124,6 +193,206 @@ class WanxImageModel(ImageGenModel):
             logger.error(f"Error during generation: {e}")
             logger.error(traceback.format_exc())
             raise
+
+    def _image_openai_base_url(self) -> Optional[str]:
+        return os.getenv("IMAGE_OPENAI_BASE_URL") or os.getenv("KONGYANG_BASE_URL")
+
+    def _image_openai_api_key(self) -> Optional[str]:
+        return os.getenv("IMAGE_OPENAI_API_KEY")
+
+    def _wan_size_to_gemini_image_config(self, size: str) -> Optional[Dict[str, Any]]:
+        """Map Wan `WxH` size string to gateway image_config (aspect_ratio), if known."""
+        if not size:
+            return None
+        ar = _WAN_SIZE_TO_ASPECT_RATIO.get(size.strip())
+        if ar:
+            return {"aspect_ratio": ar}
+        if "*" in size:
+            try:
+                w_str, h_str = size.split("*", 1)[:2]
+                w, h = int(w_str.strip()), int(h_str.strip())
+                if w > 0 and h > 0:
+                    # Approximate nearest named ratio (simple float compare)
+                    r = w / h
+                    candidates = [
+                        (1.0, "1:1"),
+                        (2 / 3, "2:3"),
+                        (3 / 2, "3:2"),
+                        (3 / 4, "3:4"),
+                        (4 / 3, "4:3"),
+                        (4 / 5, "4:5"),
+                        (5 / 4, "5:4"),
+                        (9 / 16, "9:16"),
+                        (16 / 9, "16:9"),
+                        (21 / 9, "21:9"),
+                    ]
+                    best = min(candidates, key=lambda ch: abs(ch[0] - r))
+                    return {"aspect_ratio": best[1]}
+            except (ValueError, ZeroDivisionError):
+                pass
+        return None
+
+    def _generate_openai_compatible_chat_image(
+        self,
+        prompt: str,
+        size: str,
+        negative_prompt: Optional[str],
+        final_model_name: str,
+        ref_image_paths: Optional[List[str]] = None,
+    ) -> str:
+        """
+        Text-to-image or image-to-image via OpenAI-compatible POST /chat/completions.
+        Expects IMAGE_OPENAI_BASE_URL (or KONGYANG_BASE_URL) and IMAGE_OPENAI_API_KEY.
+        With ref_image_paths, sends multimodal user content (image_url parts + text).
+        Returns an http(s) URL or a data: URI for _download_image / _write_data_uri_to_path.
+        """
+        base_url = self._image_openai_base_url()
+        api_key = self._image_openai_api_key()
+        if not base_url or not api_key:
+            raise RuntimeError(
+                "Gemini image generation requires IMAGE_OPENAI_BASE_URL (or KONGYANG_BASE_URL) "
+                "and IMAGE_OPENAI_API_KEY (kept separate from OPENAI_* LLM settings)."
+            )
+
+        user_text = prompt
+        if negative_prompt:
+            user_text = f"{prompt}\n\nNegative prompt: {negative_prompt}"
+
+        image_cfg = self._wan_size_to_gemini_image_config(size)
+        extra_body: Dict[str, Any] = {
+            "modalities": ["image", "text"],
+        }
+        if image_cfg:
+            extra_body["image_config"] = image_cfg
+
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url=base_url.rstrip("/"),
+            timeout=300.0,
+            max_retries=2,
+        )
+
+        if ref_image_paths:
+            content_parts: List[Dict[str, Any]] = []
+            for path in ref_image_paths:
+                resolved = self._resolve_wan26_reference_image(path, model_name=final_model_name)
+                if resolved:
+                    content_parts.append({"type": "image_url", "image_url": {"url": resolved}})
+            if not content_parts:
+                raise RuntimeError(
+                    "Gemini I2I requires at least one resolvable reference image "
+                    "(OSS URL, https URL, or local file path)."
+                )
+            content_parts.append({"type": "text", "text": user_text})
+            messages = [{"role": "user", "content": content_parts}]
+            logger.info(
+                "Calling OpenAI-compatible chat completions for image editing (I2I) with %s reference(s)...",
+                len(content_parts) - 1,
+            )
+        else:
+            messages = [{"role": "user", "content": user_text}]
+            logger.info("Calling OpenAI-compatible chat completions for image generation...")
+
+        payload = {
+            "model": final_model_name,
+            "messages": messages,
+            **extra_body,
+        }
+        try:
+            response = client.chat.completions.create(
+                model=final_model_name,
+                messages=messages,
+                extra_body=extra_body,
+            )
+            data = _chat_completion_response_to_dict(response)
+        except TypeError:
+            # Older openai package without extra_body
+            post_url = base_url.rstrip("/") + "/chat/completions"
+            r = requests.post(
+                post_url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=300,
+            )
+            r.raise_for_status()
+            data = r.json()
+        fr = (data.get("choices") or [{}])[0].get("finish_reason")
+        if fr == "content_filter":
+            raise RuntimeError("Image generation was blocked by content policy (finish_reason=content_filter).")
+
+        return self._parse_openai_chat_image_response(data)
+
+    def _parse_openai_chat_image_response(self, data: Dict[str, Any]) -> str:
+        """Extract first image as URL or data: URI from chat.completion JSON."""
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"No choices in chat completion: {data}")
+
+        msg = choices[0].get("message") or {}
+        images = msg.get("images")
+        if isinstance(images, list):
+            for img in images:
+                if not isinstance(img, dict):
+                    continue
+                iu = img.get("image_url") or {}
+                if isinstance(iu, dict):
+                    url = iu.get("url")
+                    if url:
+                        return url
+
+        content = msg.get("content")
+        if isinstance(content, list):
+            # Multimodal segments (e.g. type image_url)
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "image_url":
+                    iu = part.get("image_url") or {}
+                    if isinstance(iu, dict) and iu.get("url"):
+                        return iu["url"]
+                inline = part.get("inline_data") or part.get("inlineData")
+                if isinstance(inline, dict) and inline.get("data"):
+                    mime = inline.get("mime_type") or inline.get("mimeType") or "image/png"
+                    b64 = inline["data"]
+                    return f"data:{mime};base64,{b64}"
+
+        if isinstance(content, str) and content.strip():
+            return self._extract_image_url_or_data_uri_from_text(content)
+
+        raise RuntimeError("Could not extract image URL or base64 from chat completion response.")
+
+    def _extract_image_url_or_data_uri_from_text(self, text: str) -> str:
+        """Handle Markdown image, plain https URL, or raw data: URI in assistant text."""
+        m = re.search(r"!\[[^\]]*\]\((data:image/[^)]+)\)", text)
+        if m:
+            return m.group(1).strip()
+        m = re.search(r"!\[[^\]]*\]\((https?://[^)\s]+)\)", text)
+        if m:
+            return m.group(1).strip()
+        m = re.search(r"(data:image/[\w.+-]+;base64,[A-Za-z0-9+/=\s]+)", text)
+        if m:
+            return re.sub(r"\s+", "", m.group(1))
+        m = re.search(r"(https?://[^\s<>\"']+\.(?:png|jpg|jpeg|webp)(?:\?[^\s<>\"']*)?)", text, re.I)
+        if m:
+            return m.group(1)
+        raise RuntimeError("Assistant message had no recognizable image URL or data URI in content.")
+
+    def _write_data_uri_to_path(self, data_uri: str, output_path: str) -> None:
+        m = re.match(r"data:(image/[\w.+-]+);base64,(.+)", data_uri, re.DOTALL)
+        if not m:
+            raise ValueError(f"Unsupported data URI prefix: {data_uri[:80]}...")
+        b64 = re.sub(r"\s+", "", m.group(2))
+        raw = base64.b64decode(b64)
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        temp_path = output_path + ".tmp"
+        with open(temp_path, "wb") as f:
+            f.write(raw)
+        os.rename(temp_path, output_path)
 
     def _generate_wan26_http(self, prompt: str, size: str, n: int, negative_prompt: str = None) -> str:
         """Generate image using Wan 2.6 T2I via HTTP API (synchronous)."""
@@ -485,7 +754,12 @@ class WanxImageModel(ImageGenModel):
 
     def _download_image(self, url: str, output_path: str):
         logger.info(f"Downloading image to {output_path}...")
-        
+
+        if url.startswith("data:"):
+            self._write_data_uri_to_path(url, output_path)
+            logger.info("Wrote image from data URI.")
+            return
+
         # Setup retry strategy
         from requests.adapters import HTTPAdapter
         from requests.packages.urllib3.util.retry import Retry

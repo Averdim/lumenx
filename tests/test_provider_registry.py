@@ -10,6 +10,12 @@ class TestProviderRegistryRouting:
         assert registry.resolve_backend("wan2.6-image") == "dashscope"
         assert registry.resolve_backend("wan2.6-i2v") == "dashscope"
 
+    def test_gemini_image_models_route_to_openai(self):
+        registry = get_default_provider_registry()
+
+        assert registry.resolve_backend("gemini-3.1-flash-image-preview") == "openai"
+        assert registry.get_family_config("gemini-3.1-flash-image-preview").backend_default == "openai"
+
     def test_kling_defaults_to_dashscope_when_mode_is_unset(self):
         registry = get_default_provider_registry()
 

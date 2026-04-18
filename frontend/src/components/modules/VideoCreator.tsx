@@ -20,7 +20,7 @@ import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, VideoTask } from "@/lib/api";
 import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
 import PromptBuilder, { PromptSegment, PromptBuilderRef } from "./PromptBuilder";
-import type { VideoParams } from "@/store/projectStore";
+import { SEEDANCE_20_MODEL_ID, type VideoParams } from "@/store/projectStore";
 
 interface VideoCreatorProps {
     onTaskCreated: (project: any) => void;
@@ -73,7 +73,6 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
         return parts.filter(p => p).join(', ');
     };
 
-    const [selectedImages, setSelectedImages] = useState<string[]>([]);
     const [selectedReferenceVideos, setSelectedReferenceVideos] = useState<string[]>([]); // New state for R2V
     const [uploadingPaths, setUploadingPaths] = useState<Record<string, string>>({}); // Map blobUrl -> serverUrl
     const [activeTab, setActiveTab] = useState<"storyboard" | "upload">("storyboard");
@@ -90,6 +89,20 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
             setGenerationMode(params.generationMode as "i2v" | "r2v");
         }
     }, [params.generationMode]);
+
+    const refUrls = params.referenceImageUrls ?? [];
+    const maxRefImages = () =>
+        params.model === SEEDANCE_20_MODEL_ID
+            ? params.seedanceI2vMode === "multimodal_ref"
+                ? 9
+                : params.seedanceI2vMode === "first_last_frame"
+                    ? 2
+                    : 1
+            : 50;
+
+    const setRefUrls = (next: string[]) => {
+        onParamsChange({ referenceImageUrls: next });
+    };
 
     const handleExtractLastFrame = async (frameId: string, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -119,20 +132,42 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
     };
 
     const handleFrameSelect = (frame: any) => {
-        // Prefer rendered_image_url (from extracted last frame / uploaded image), fallback to image_url
         const url = frame.rendered_image_url || frame.image_url;
         if (!url) return;
 
-        // If already selected, deselect
-        if (selectedImages.includes(url)) {
-            setSelectedImages([]);
-            return;
+        const isSeedance = params.model === SEEDANCE_20_MODEL_ID && generationMode === "i2v";
+
+        if (!isSeedance) {
+            if (refUrls.includes(url)) {
+                setRefUrls([]);
+                return;
+            }
+            setRefUrls([url]);
+        } else {
+            const mode = params.seedanceI2vMode;
+            if (mode === "first_frame") {
+                if (refUrls[0] === url && refUrls.length === 1) setRefUrls([]);
+                else setRefUrls([url]);
+            } else if (mode === "first_last_frame") {
+                if (refUrls.includes(url)) {
+                    setRefUrls(refUrls.filter((u) => u !== url));
+                } else if (refUrls.length < 2) {
+                    setRefUrls([...refUrls, url]);
+                } else {
+                    setRefUrls([refUrls[0], url]);
+                }
+            } else {
+                if (refUrls.includes(url)) {
+                    setRefUrls(refUrls.filter((u) => u !== url));
+                } else if (refUrls.length >= 9) {
+                    alert("最多选择 9 张参考图");
+                    return;
+                } else {
+                    setRefUrls([...refUrls, url]);
+                }
+            }
         }
 
-        // Select new image (replace existing)
-        setSelectedImages([url]);
-
-        // Auto-fill prompt (Replace existing prompt)
         let newPrompt = frame.image_prompt || frame.action_description || "";
         if (frame.dialogue) {
             newPrompt += ` . Dialogue: ${frame.dialogue}`;
@@ -188,14 +223,17 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
     // Handle Remix Data
     useEffect(() => {
         if (remixData) {
-            if (remixData.image_url) setSelectedImages([remixData.image_url]);
+            const extra = remixData.reference_image_urls ?? [];
+            const urls = [remixData.image_url, ...extra].filter(Boolean) as string[];
+            const patch: Partial<VideoParams> = {};
+            if (urls.length) patch.referenceImageUrls = urls;
+            if (remixData.seedance_i2v_mode)
+                patch.seedanceI2vMode = remixData.seedance_i2v_mode as VideoParams["seedanceI2vMode"];
+            if (Object.keys(patch).length) onParamsChange(patch);
             if (remixData.prompt) setSegments([{ type: "text", value: remixData.prompt, id: "remix" }]);
-            // negativePrompt handled by parent
-
-            // Clear remix data after applying to avoid re-applying on every render
             onRemixClear();
         }
-    }, [remixData, onRemixClear]);
+    }, [remixData, onRemixClear, onParamsChange]);
 
     const handleImageSelect = (files: FileList | null) => {
         if (!files) return;
@@ -206,27 +244,38 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
             const blobUrl = URL.createObjectURL(file);
             newImages.push(blobUrl);
 
-            // Background Upload
             try {
                 const res = await api.uploadFile(file);
-                setUploadingPaths(prev => ({ ...prev, [blobUrl]: res.url }));
+                setUploadingPaths((prev) => ({ ...prev, [blobUrl]: res.url }));
             } catch (error) {
                 console.error("Upload failed", error);
-                // Could remove from selectedImages or show error state on the specific image
             }
         });
 
-        setSelectedImages(prev => [...prev, ...newImages]);
+        const max = maxRefImages();
+        onParamsChange({
+            referenceImageUrls: [...refUrls, ...newImages].slice(0, max),
+        });
     };
 
     const handleAssetSelect = (url: string) => {
-        if (!selectedImages.includes(url)) {
-            setSelectedImages(prev => [...prev, url]);
+        if (refUrls.includes(url)) return;
+        const max = maxRefImages();
+        if (refUrls.length >= max) {
+            if (params.model === SEEDANCE_20_MODEL_ID) {
+                alert(
+                    params.seedanceI2vMode === "multimodal_ref"
+                        ? "已达到参考图数量上限"
+                        : "当前模式参考图数量已满"
+                );
+            }
+            return;
         }
+        setRefUrls([...refUrls, url]);
     };
 
     const removeImage = (index: number) => {
-        setSelectedImages(prev => prev.filter((_, i) => i !== index));
+        setRefUrls(refUrls.filter((_, i) => i !== index));
     };
 
     // R2V: Handle Reference Video Selection
@@ -290,12 +339,34 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
     };
 
     const handleSubmit = async () => {
-        // Validation based on mode
-        if (generationMode === 'i2v') {
-            if (selectedImages.length === 0 || !prompt || !currentProject) return;
+        if (generationMode === "i2v") {
+            if (!prompt || !currentProject) return;
+            for (const img of refUrls) {
+                if (img.startsWith("blob:") && !uploadingPaths[img]) {
+                    alert("图片仍在上传中，请稍候再试");
+                    return;
+                }
+            }
+            if (params.model === SEEDANCE_20_MODEL_ID) {
+                const m = params.seedanceI2vMode;
+                const n = refUrls.length;
+                if (m === "first_frame" && n !== 1) {
+                    alert("首帧模式需要恰好 1 张参考图");
+                    return;
+                }
+                if (m === "first_last_frame" && n !== 2) {
+                    alert("首尾帧模式需要恰好 2 张图（顺序：首帧 → 尾帧）");
+                    return;
+                }
+                if (m === "multimodal_ref" && (n < 1 || n > 9)) {
+                    alert("多模态参考需要 1～9 张参考图");
+                    return;
+                }
+            } else if (refUrls.length === 0) {
+                return;
+            }
         } else {
-            // R2V mode: need at least one cast slot filled
-            const filledSlots = castSlots.filter(s => s.url);
+            const filledSlots = castSlots.filter((s) => s.url);
             if (filledSlots.length === 0) {
                 alert("R2V 模式请至少填充一个角色槽位 (@Ref_A)");
                 return;
@@ -305,19 +376,99 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
 
         setIsSubmitting(true);
         try {
-            // Add motion description to prompt
             const motionDesc = getMotionDescription();
             const finalPrompt = motionDesc ? `${prompt}, ${motionDesc}` : prompt;
 
-            // Optimistic update - add pending tasks to queue immediately
+            const isSeedanceI2v =
+                generationMode === "i2v" && params.model === SEEDANCE_20_MODEL_ID && refUrls.length >= 1;
+
+            if (isSeedanceI2v) {
+                const normalized: string[] = [];
+                for (const img of refUrls) {
+                    let u = img;
+                    if (img.startsWith("blob:")) {
+                        u = uploadingPaths[img]!;
+                    } else if (img.startsWith(`${API_URL}/files/`)) {
+                        u = img.replace(`${API_URL}/files/`, "");
+                    }
+                    normalized.push(u);
+                }
+                const first = normalized[0];
+                const rest = normalized.slice(1);
+                const frame0 = refUrls[0];
+                const frameMatch = currentProject?.frames?.find(
+                    (f: any) =>
+                        (f.rendered_image_url || f.image_url) === frame0 ||
+                        f.image_url === frame0 ||
+                        `${API_URL}/files/${f.image_url}` === frame0
+                );
+                const frameId = frameMatch?.id;
+
+                const optimisticTasks: VideoTask[] = [];
+                for (let i = 0; i < params.batchSize; i++) {
+                    optimisticTasks.push({
+                        id: `temp-${Date.now()}-sd-${i}`,
+                        project_id: currentProject!.id,
+                        image_url: first,
+                        prompt: finalPrompt,
+                        status: "pending",
+                        duration: params.duration,
+                        seed: params.seed,
+                        resolution: params.resolution,
+                        generate_audio: params.generateAudio,
+                        audio_url: params.audioUrl,
+                        prompt_extend: params.promptExtend,
+                        negative_prompt: params.negativePrompt,
+                        model: params.model,
+                        created_at: Date.now() / 1000,
+                        generation_mode: generationMode,
+                        reference_image_urls: rest,
+                        seedance_i2v_mode: params.seedanceI2vMode,
+                    });
+                }
+                onTaskCreated({
+                    ...currentProject!,
+                    video_tasks: [...(currentProject!.video_tasks || []), ...optimisticTasks],
+                });
+                for (let b = 0; b < params.batchSize; b++) {
+                    await api.createVideoTask(
+                        currentProject!.id,
+                        first,
+                        finalPrompt,
+                        params.duration,
+                        params.seed,
+                        params.resolution,
+                        params.generateAudio,
+                        params.audioUrl,
+                        params.promptExtend,
+                        params.negativePrompt,
+                        1,
+                        params.model,
+                        frameId,
+                        params.shotType,
+                        generationMode,
+                        [],
+                        params.mode,
+                        params.sound,
+                        params.cfgScale,
+                        params.viduAudio,
+                        params.movementAmplitude,
+                        rest.length ? rest : undefined,
+                        params.seedanceI2vMode
+                    );
+                }
+                const updatedProject = await api.getProject(currentProject!.id);
+                onTaskCreated(updatedProject);
+                setSubmitSuccess(true);
+                setTimeout(() => setSubmitSuccess(false), 1500);
+                return;
+            }
+
             const optimisticTasks: VideoTask[] = [];
 
-            // Determine items to process
-            // In I2V: process selected images
-            // In R2V: process selected images OR a single task if no image selected
-            let itemsToProcess = selectedImages;
-            if (generationMode === 'r2v' && selectedImages.length === 0) {
-                itemsToProcess = [""]; // Dummy item to trigger one iteration
+            let itemsToProcess = refUrls;
+            if (generationMode === "r2v" && refUrls.length === 0) {
+                itemsToProcess = [""];
             }
 
             itemsToProcess.forEach((img, idx) => {
@@ -460,7 +611,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
         };
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [selectedImages, prompt, currentProject, params, selectedReferenceVideos]); // Added selectedReferenceVideos dependency
+    }, [refUrls, prompt, currentProject, params, selectedReferenceVideos, uploadingPaths, generationMode]);
 
     // Available assets for drag/drop or selection
     const availableAssets = currentProject ? [
@@ -631,7 +782,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                                                     <div
                                                         key={frame.id}
                                                         onClick={() => handleFrameSelect(frame)}
-                                                        className={`group relative aspect-video rounded-lg overflow-hidden border cursor-pointer transition-all ${selectedImages.includes(frame.rendered_image_url || frame.image_url)
+                                                        className={`group relative aspect-video rounded-lg overflow-hidden border cursor-pointer transition-all ${refUrls.includes(frame.rendered_image_url || frame.image_url)
                                                             ? "border-primary ring-2 ring-primary/50"
                                                             : "border-white/10 hover:border-white/30"
                                                             }`}
@@ -688,11 +839,11 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                                         )}
 
                                         {/* Selected Preview (Storyboard Mode) */}
-                                        {selectedImages.length > 0 && (
+                                        {refUrls.length > 0 && (
                                             <div className="pt-4 border-t border-white/10">
                                                 <p className="text-xs text-gray-500 mb-2">Selected for Generation:</p>
                                                 <div className="flex gap-2 flex-wrap">
-                                                    {selectedImages.map((img, idx) => {
+                                                    {refUrls.map((img, idx) => {
                                                         // Find frame to get updated_at for cache busting
                                                         const frame = currentProject?.frames?.find((f: any) => (f.rendered_image_url || f.image_url) === img);
                                                         const timestamp = frame?.updated_at || 0;
@@ -720,7 +871,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                                     /* Upload Mode Content */
                                     <div className="space-y-4">
                                         <div className="grid grid-cols-3 gap-4">
-                                            {selectedImages.map((img, idx) => (
+                                            {refUrls.map((img, idx) => (
                                                 <div key={idx} className="relative aspect-video bg-black/40 rounded-xl overflow-hidden border border-white/10 group">
                                                     <img
                                                         src={getAssetUrl(img)}
@@ -1106,7 +1257,7 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                 <div className="max-w-4xl mx-auto w-full">
                     <button
                         onClick={handleSubmit}
-                        disabled={(!prompt || isSubmitting) || (generationMode === 'i2v' && selectedImages.length === 0)}
+                        disabled={(!prompt || isSubmitting) || (generationMode === "i2v" && refUrls.length === 0)}
                         className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all transform active:scale-[0.99] ${submitSuccess
                             ? "bg-green-500 text-white"
                             : "bg-primary hover:bg-primary/90 text-white"

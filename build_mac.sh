@@ -137,7 +137,8 @@ pyinstaller --clean --noconfirm \
     --hidden-import=fastapi \
     --hidden-import=pydantic \
     --hidden-import=dashscope \
-    --hidden-import=oss2 \
+    --hidden-import=boto3 \
+    --hidden-import=botocore \
     --hidden-import=alibabacloud_videoenhan20200320 \
     --hidden-import=alibabacloud_tea_openapi \
     --hidden-import=alibabacloud_tea_util \
