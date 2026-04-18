@@ -13,7 +13,14 @@ export function getSelectedVariantUrl(asset: any): string | null {
     return asset.variants[0]?.url || null;
 }
 
-export type FrameReferenceThumb = { url: string; label: string };
+export type FrameReferenceThumb = {
+    url: string;
+    label: string;
+    refKind: "scene" | "character" | "prop";
+    assetId: string;
+    /** 仅角色：缩略图取自哪一类参考图（与资产页 / API 一致） */
+    characterSlot?: "full_body" | "three_view" | "headshot";
+};
 
 export function buildFrameReferenceThumbnails(project: {
     scenes?: { id: string; name?: string; image_asset?: any; image_url?: string }[];
@@ -41,7 +48,7 @@ export function buildFrameReferenceThumbnails(project: {
         const scene = project.scenes.find((s) => s.id === frame.scene_id);
         if (scene) {
             const u = getSelectedVariantUrl(scene.image_asset) || scene.image_url;
-            if (u) out.push({ url: u, label: scene.name || "Scene" });
+            if (u) out.push({ url: u, label: scene.name || "Scene", refKind: "scene", assetId: scene.id });
         }
     }
 
@@ -49,16 +56,55 @@ export function buildFrameReferenceThumbnails(project: {
         frame.character_ids.forEach((charId) => {
             const char = project.characters!.find((c) => c.id === charId);
             if (!char) return;
-            const u =
-                getSelectedVariantUrl(char.three_view_asset) ||
-                getSelectedVariantUrl(char.full_body_asset) ||
-                getSelectedVariantUrl(char.headshot_asset) ||
-                char.three_view_image_url ||
-                char.full_body_image_url ||
-                char.headshot_image_url ||
-                char.avatar_url ||
-                char.image_url;
-            if (u) out.push({ url: u, label: char.name || "Char" });
+            const slots: { slot: "three_view" | "full_body" | "headshot"; url: string | null }[] = [
+                {
+                    slot: "three_view",
+                    url:
+                        getSelectedVariantUrl(char.three_view_asset) ||
+                        (char.three_view_image_url as string | undefined) ||
+                        null,
+                },
+                {
+                    slot: "full_body",
+                    url:
+                        getSelectedVariantUrl(char.full_body_asset) ||
+                        (char.full_body_image_url as string | undefined) ||
+                        null,
+                },
+                {
+                    slot: "headshot",
+                    url:
+                        getSelectedVariantUrl(char.headshot_asset) ||
+                        (char.headshot_image_url as string | undefined) ||
+                        null,
+                },
+            ];
+            let picked: { slot: "three_view" | "full_body" | "headshot"; url: string } | null = null;
+            for (const s of slots) {
+                if (s.url) {
+                    picked = { slot: s.slot, url: s.url };
+                    break;
+                }
+            }
+            const legacy =
+                (char.avatar_url as string | undefined) || (char.image_url as string | undefined) || null;
+            if (picked) {
+                out.push({
+                    url: picked.url,
+                    label: char.name || "Char",
+                    refKind: "character",
+                    assetId: char.id,
+                    characterSlot: picked.slot,
+                });
+            } else if (legacy) {
+                out.push({
+                    url: legacy,
+                    label: char.name || "Char",
+                    refKind: "character",
+                    assetId: char.id,
+                    characterSlot: "full_body",
+                });
+            }
         });
     }
 
@@ -67,7 +113,7 @@ export function buildFrameReferenceThumbnails(project: {
             const prop = project.props!.find((p) => p.id === propId);
             if (!prop) return;
             const u = getSelectedVariantUrl(prop.image_asset) || prop.image_url;
-            if (u) out.push({ url: u, label: prop.name || "Prop" });
+            if (u) out.push({ url: u, label: prop.name || "Prop", refKind: "prop", assetId: prop.id });
         });
     }
 

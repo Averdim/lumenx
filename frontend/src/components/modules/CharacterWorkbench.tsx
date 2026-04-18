@@ -14,6 +14,8 @@ import { getAssetUrl } from "@/lib/utils";
 
 interface CharacterWorkbenchProps {
     asset: any;
+    /** 打开时默认选中的静态图 Tab（例如从分镜 Refs 点进对应槽位） */
+    initialActivePanel?: "full_body" | "three_view" | "headshot";
     onClose: () => void;
     onUpdateDescription: (desc: string) => void;
     onGenerate: (type: string, prompt: string, applyStyle: boolean, negativePrompt: string, batchSize: number) => void;
@@ -25,8 +27,22 @@ interface CharacterWorkbenchProps {
     isGeneratingVideo?: boolean;
 }
 
-export default function CharacterWorkbench({ asset, onClose, onUpdateDescription, onGenerate, generatingTypes = [], stylePrompt = "", styleNegativePrompt = "", onGenerateVideo, onDeleteVideo, isGeneratingVideo }: CharacterWorkbenchProps) {
-    const [activePanel, setActivePanel] = useState<"full_body" | "three_view" | "headshot" | "video">("full_body");
+export default function CharacterWorkbench({
+    asset,
+    initialActivePanel,
+    onClose,
+    onUpdateDescription,
+    onGenerate,
+    generatingTypes = [],
+    stylePrompt = "",
+    styleNegativePrompt = "",
+    onGenerateVideo,
+    onDeleteVideo,
+    isGeneratingVideo,
+}: CharacterWorkbenchProps) {
+    const [activePanel, setActivePanel] = useState<"full_body" | "three_view" | "headshot" | "video">(
+        initialActivePanel ?? "full_body"
+    );
     const updateProject = useProjectStore(state => state.updateProject);
     const currentProject = useProjectStore(state => state.currentProject);
 

@@ -19,19 +19,20 @@ import {
     Lock,
     Unlock,
     Clapperboard,
-    Link2,
+    MapPin,
+    Users,
 } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, crudApi } from "@/lib/api";
 import { getAssetUrl, getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib/utils";
-import { buildFrameReferenceThumbnails, getSelectedVariantUrl } from "@/lib/storyboardRefs";
+import { buildFrameReferenceThumbnails, getSelectedVariantUrl, type FrameReferenceThumb } from "@/lib/storyboardRefs";
+import CharacterDetailModal from "./CharacterDetailModal";
+import CharacterWorkbench from "./CharacterWorkbench";
 import StoryboardFrameEditor from "./StoryboardFrameEditor";
-import StoryboardFrameContextFields from "./StoryboardFrameContextFields";
 import StoryboardFirstFramePromptColumn from "./StoryboardFirstFramePromptColumn";
 import {
     I2V_MODELS,
     SEEDANCE_20_MODEL_ID,
-    SEEDANCE_15_MODEL_ID,
     type SeedanceI2vMode,
 } from "@/store/projectStore";
 
@@ -63,14 +64,12 @@ function FrameWorkbenchRow({
     prevVideoReady,
     videoPrompt,
     onVideoPromptChange,
-    extraRefs,
-    onAddExtraRef,
-    onRemoveExtraRef,
     params,
     onParamsPatch,
     onSubmitVideo,
     videoBusy,
     tasksForFrame,
+    onOpenAssetRef,
 }: {
     project: any;
     frame: any;
@@ -91,22 +90,49 @@ function FrameWorkbenchRow({
     prevVideoReady: boolean;
     videoPrompt: string;
     onVideoPromptChange: (v: string) => void;
-    extraRefs: string[];
-    onAddExtraRef: (url: string) => void;
-    onRemoveExtraRef: (i: number) => void;
     params: RowVideoParams;
     onParamsPatch: (p: Partial<RowVideoParams>) => void;
     onSubmitVideo: () => void;
     videoBusy: boolean;
     tasksForFrame: any[];
+    onOpenAssetRef: (thumb: FrameReferenceThumb) => void;
 }) {
-    const [pickerOpen, setPickerOpen] = useState(false);
     const thumbs = useMemo(() => buildFrameReferenceThumbnails(project, frame), [project, frame]);
+    const frameSceneName = useMemo(() => {
+        if (!frame.scene_id) return null;
+        return project.scenes?.find((s: any) => s.id === frame.scene_id)?.name ?? null;
+    }, [frame.scene_id, project.scenes]);
+    const frameCharacterNames = useMemo(() => {
+        const ids: string[] = frame.character_ids || [];
+        if (!ids.length) return [] as string[];
+        return ids.map(
+            (id: string) => project.characters?.find((c: any) => c.id === id)?.name?.trim() || id.slice(0, 8)
+        );
+    }, [frame.character_ids, project.characters]);
+
+    const compositionScene = useMemo(() => {
+        if (!frame.scene_id) return null;
+        return project.scenes?.find((s: any) => s.id === frame.scene_id) ?? null;
+    }, [frame.scene_id, project.scenes]);
+    const compositionCharacters = useMemo(() => {
+        const ids: string[] = frame.character_ids || [];
+        return ids
+            .map((id: string) => project.characters?.find((c: any) => c.id === id))
+            .filter(Boolean) as any[];
+    }, [frame.character_ids, project.characters]);
+    const compositionProps = useMemo(() => {
+        const ids: string[] = frame.prop_ids || [];
+        return ids.map((id: string) => project.props?.find((p: any) => p.id === id)).filter(Boolean) as any[];
+    }, [frame.prop_ids, project.props]);
+
+    const [refCompositionOpen, setRefCompositionOpen] = useState(false);
+
     const primaryRaw = frame.rendered_image_url || frame.image_url || "";
     const primaryDisplay = primaryRaw ? getAssetUrlWithTimestamp(primaryRaw, frame.updated_at) : "";
     const isSeedance20 = params.model === SEEDANCE_20_MODEL_ID;
-    const isSeedance15 = params.model === SEEDANCE_15_MODEL_ID;
-    const showExtraRefs = isSeedance20 && params.seedanceI2vMode !== "first_frame";
+    /** 多图参考不依赖本分镜首帧图；保留剧情/对白，隐藏首帧相关区 */
+    const isMultimodalRef = isSeedance20 && params.seedanceI2vMode === "multimodal_ref";
+    const showFirstFrameImageColumn = !isMultimodalRef;
 
     const completed = tasksForFrame.filter((t: any) => t.status === "completed" && t.video_url);
     const sorted = [...completed].sort((a: any, b: any) => (b.created_at || 0) - (a.created_at || 0));
@@ -132,12 +158,33 @@ function FrameWorkbenchRow({
     };
 
     return (
+        <>
         <div
             onClick={onSelect}
             className={`flex-shrink-0 flex flex-col rounded-xl border transition-all cursor-pointer ${
                 selected ? "bg-white/8 border-primary ring-1 ring-primary" : "bg-[#141414] border-white/10 hover:border-white/20"
             }`}
         >
+            <div
+                className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-white/10 px-2 py-1.5"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex min-w-0 max-w-full items-center gap-1.5 text-[10px] leading-tight">
+                    <MapPin size={11} className="shrink-0 text-gray-500" aria-hidden />
+                    <span className="shrink-0 font-semibold uppercase tracking-wide text-gray-500">场景</span>
+                    <span className="min-w-0 truncate text-gray-200" title={frameSceneName || undefined}>
+                        {frameSceneName || "—"}
+                    </span>
+                </div>
+                <div className="flex min-w-0 flex-1 items-baseline gap-1.5 text-[10px] leading-tight">
+                    <Users size={11} className="shrink-0 text-gray-500" aria-hidden />
+                    <span className="shrink-0 font-semibold uppercase tracking-wide text-gray-500">角色</span>
+                    <span className="break-words text-gray-200" title={frameCharacterNames.join("、") || undefined}>
+                        {frameCharacterNames.length ? frameCharacterNames.join("、") : "—"}
+                    </span>
+                </div>
+            </div>
+
             <div className="flex min-h-[12rem] items-stretch gap-1.5 p-2 pb-1.5">
                 <div className="flex flex-col items-center gap-1 pt-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <span className="w-7 h-7 rounded-full bg-[#222] border border-white/10 flex items-center justify-center text-[10px] font-bold text-gray-400">
@@ -165,9 +212,6 @@ function FrameWorkbenchRow({
                         <button type="button" onClick={onCopy} className="p-1 rounded hover:bg-white/10 text-gray-500" title="复制">
                             <Copy size={12} />
                         </button>
-                        <button type="button" onClick={onUploadClick} className="p-1 rounded hover:bg-blue-500/20 text-gray-500" title="上传">
-                            <Upload size={12} />
-                        </button>
                         {prevVideoReady ? (
                             <button
                                 type="button"
@@ -189,83 +233,140 @@ function FrameWorkbenchRow({
                     className="flex w-[7.25rem] shrink-0 flex-col gap-1 border-r border-white/10 pr-2"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <span className="text-[9px] uppercase text-gray-500 font-bold tracking-wider">Refs</span>
+                    <div className="flex items-center justify-between gap-0.5">
+                        <span className="text-[9px] uppercase text-gray-500 font-bold tracking-wider">Refs</span>
+                        <button
+                            type="button"
+                            title="查看场景、人物与道具"
+                            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[13px] leading-none text-gray-400 transition-colors hover:bg-white/10 hover:text-gray-100"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setRefCompositionOpen(true);
+                            }}
+                        >
+                            👤
+                        </button>
+                    </div>
                     <div className="flex flex-wrap gap-1">
                         {thumbs.length === 0 ? (
                             <span className="text-[10px] text-gray-600">—</span>
                         ) : (
                             thumbs.slice(0, 6).map((t, i) => (
-                                <img
-                                    key={`${t.url}-${i}`}
-                                    src={getAssetUrl(t.url)}
-                                    title={t.label}
-                                    alt=""
-                                    className="h-12 w-12 rounded border border-white/10 object-cover"
-                                />
+                                <button
+                                    key={`${t.assetId}-${t.refKind}-${i}`}
+                                    type="button"
+                                    title={`${t.label}（点击查看素材）`}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onOpenAssetRef(t);
+                                    }}
+                                    className="h-12 w-12 overflow-hidden rounded border border-white/10 object-cover ring-offset-2 transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary/60"
+                                >
+                                    <img src={getAssetUrl(t.url)} alt="" className="h-full w-full object-cover" />
+                                </button>
                             ))
                         )}
                     </div>
+                    {isMultimodalRef ? (
+                        <button
+                            type="button"
+                            title="上传首帧图片"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onUploadClick(e);
+                            }}
+                            className="flex w-full items-center justify-center gap-1 rounded border border-white/10 bg-black/30 px-1.5 py-1 text-[9px] text-gray-400 hover:border-primary/40 hover:text-white"
+                        >
+                            <Upload size={11} />
+                            上传首帧
+                        </button>
+                    ) : null}
                 </div>
 
                 <div
                     className="flex min-h-0 min-w-0 flex-1 flex-row items-stretch gap-1.5"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-1.5 border-r border-white/10 pr-2 sm:flex-row">
+                    <div
+                        className={`flex h-full min-h-0 min-w-0 flex-col gap-1.5 border-r border-white/10 pr-2 sm:flex-row ${
+                            isMultimodalRef ? "flex-1 basis-0 min-w-0" : "flex-1"
+                        }`}
+                    >
                         <StoryboardFirstFramePromptColumn
                             frameId={frame.id}
+                            hideFirstFrameSection={isMultimodalRef}
                             className="h-full min-h-0 min-w-0 w-full flex-1 basis-0"
                         />
-                        <div className="flex w-[8.25rem] shrink-0 flex-col items-center gap-1 sm:items-start">
-                            <div className="relative aspect-video w-[8.25rem] shrink-0 overflow-hidden rounded-lg border border-white/10 bg-black/40">
-                                {primaryDisplay ? (
-                                    <img
-                                        src={primaryDisplay}
-                                        alt=""
-                                        className="h-full w-full cursor-pointer object-cover"
-                                        onClick={onOpenEditor}
-                                    />
-                                ) : (
-                                    <div className="flex h-full w-full items-center justify-center text-gray-600">
-                                        <ImageIcon size={20} className="opacity-30" />
-                                    </div>
-                                )}
-                                {!frame.locked && primaryDisplay ? (
-                                    <div className="absolute bottom-1 right-1 flex gap-0.5">
-                                        {[1, 2].map((size) => (
-                                            <button
-                                                key={size}
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onRender(size);
-                                                }}
-                                                disabled={rendering}
-                                                className="rounded bg-primary/90 px-1.5 py-0.5 text-[10px] text-white"
-                                            >
-                                                ×{size}
-                                            </button>
-                                        ))}
-                                    </div>
-                                ) : null}
-                                {rendering ? (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                                        <Loader2 className="animate-spin text-white" size={18} />
-                                    </div>
-                                ) : null}
+                        {showFirstFrameImageColumn ? (
+                            <div className="flex w-[8.25rem] shrink-0 flex-col items-center gap-1 sm:items-start">
+                                <div className="relative aspect-video w-[8.25rem] shrink-0 overflow-hidden rounded-lg border border-white/10 bg-black/40">
+                                    {primaryDisplay ? (
+                                        <img
+                                            src={primaryDisplay}
+                                            alt=""
+                                            className="h-full w-full cursor-pointer object-cover"
+                                            onClick={onOpenEditor}
+                                        />
+                                    ) : (
+                                        <div className="flex h-full w-full items-center justify-center text-gray-600">
+                                            <ImageIcon size={20} className="opacity-30" />
+                                        </div>
+                                    )}
+                                    {!frame.locked && primaryDisplay ? (
+                                        <div className="absolute bottom-1 right-1 flex gap-0.5">
+                                            {[1, 2].map((size) => (
+                                                <button
+                                                    key={size}
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onRender(size);
+                                                    }}
+                                                    disabled={rendering}
+                                                    className="rounded bg-primary/90 px-1.5 py-0.5 text-[10px] text-white"
+                                                >
+                                                    ×{size}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : null}
+                                    {rendering ? (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                                            <Loader2 className="animate-spin text-white" size={18} />
+                                        </div>
+                                    ) : null}
+                                </div>
+                                <button
+                                    type="button"
+                                    title="上传首帧图片"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onUploadClick(e);
+                                    }}
+                                    className="flex w-full max-w-[8.25rem] items-center justify-center gap-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-gray-400 hover:border-primary/40 hover:text-white"
+                                >
+                                    <Upload size={12} />
+                                    上传首帧
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={onToggleLock}
+                                    className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-white"
+                                >
+                                    {frame.locked ? <Unlock size={10} /> : <Lock size={10} />}
+                                    {frame.locked ? "Unlock" : "Lock"}
+                                </button>
                             </div>
-                            <button
-                                type="button"
-                                onClick={onToggleLock}
-                                className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-white"
-                            >
-                                {frame.locked ? <Unlock size={10} /> : <Lock size={10} />}
-                                {frame.locked ? "Unlock" : "Lock"}
-                            </button>
-                        </div>
+                        ) : null}
                     </div>
 
-                    <div className="flex h-full min-h-0 w-full max-w-[19rem] shrink-0 flex-col gap-1.5 border-r border-white/10 pr-2 sm:w-[19rem] sm:max-w-[19rem]">
+                    <div
+                        className={`flex h-full min-h-0 flex-col gap-1.5 border-r border-white/10 pr-2 ${
+                            isMultimodalRef
+                                ? "min-w-0 flex-1 basis-0"
+                                : "w-full max-w-[19rem] shrink-0 sm:w-[19rem] sm:max-w-[19rem]"
+                        }`}
+                    >
                         <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-gray-500">
                             <Clapperboard size={10} className="inline" /> Video
                         </span>
@@ -275,108 +376,12 @@ function FrameWorkbenchRow({
                             placeholder="Video prompt…"
                             className="min-h-[4rem] w-full flex-1 resize-none overflow-y-auto rounded-lg border border-white/10 bg-black/40 p-1.5 text-xs text-gray-200 focus:border-primary/50 focus:outline-none"
                         />
-
-                        {showExtraRefs ? (
-                            <div className="flex shrink-0 flex-col gap-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setPickerOpen((o) => !o)}
-                                        className="flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] text-gray-300 hover:bg-white/10"
-                                    >
-                                        <Link2 size={10} /> 其它分镜首帧
-                                    </button>
-                                    {extraRefs.map((u, i) => (
-                                        <span
-                                            key={`${u}-${i}`}
-                                            className="inline-flex items-center gap-1 rounded bg-white/10 px-1.5 py-0.5 text-[9px] text-gray-300"
-                                        >
-                                            +{i + 1}
-                                            <button type="button" className="text-red-400" onClick={() => onRemoveExtraRef(i)}>
-                                                ×
-                                            </button>
-                                        </span>
-                                    ))}
-                                </div>
-                                {pickerOpen ? (
-                                    <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto rounded border border-white/10 bg-black/60 p-1">
-                                        {(project.frames || [])
-                                            .filter((f: any) => f.id !== frame.id)
-                                            .map((f: any) => {
-                                                const u = f.rendered_image_url || f.image_url;
-                                                if (!u) return null;
-                                                const maxExtra =
-                                                    params.seedanceI2vMode === "first_last_frame" ? 1 : 8;
-                                                return (
-                                                    <button
-                                                        key={f.id}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            const display = getAssetUrl(u);
-                                                            onAddExtraRef(display);
-                                                            setPickerOpen(false);
-                                                        }}
-                                                        disabled={extraRefs.length >= maxExtra}
-                                                        className="h-10 w-10 overflow-hidden rounded border border-white/10 opacity-80 hover:opacity-100 disabled:opacity-30"
-                                                    >
-                                                        <img src={getAssetUrl(u)} alt="" className="h-full w-full object-cover" />
-                                                    </button>
-                                                );
-                                            })}
-                                    </div>
-                                ) : null}
-                            </div>
-                        ) : isSeedance15 ? (
-                            <p className="shrink-0 text-[10px] text-gray-600">Seedance 1.5 仅支持单首帧。</p>
+                        {isSeedance20 && params.seedanceI2vMode === "multimodal_ref" ? (
+                            <p className="shrink-0 text-[10px] leading-snug text-gray-500">
+                                多图参考：仅使用左侧 Refs（场景 / 角色 / 道具资产图），自动附加，最多 9 张。
+                            </p>
                         ) : null}
 
-                        <div className="flex shrink-0 flex-wrap items-center gap-2">
-                            <select
-                                value={params.model}
-                                onChange={(e) => onParamsPatch({ model: e.target.value })}
-                                className="max-w-[11rem] rounded border border-white/10 bg-black/50 px-2 py-1 text-[10px] text-gray-200"
-                            >
-                                {I2V_MODELS.map((m) => (
-                                    <option key={m.id} value={m.id}>
-                                        {m.name}
-                                    </option>
-                                ))}
-                            </select>
-                            <select
-                                value={params.duration}
-                                onChange={(e) => onParamsPatch({ duration: Number(e.target.value) })}
-                                className="rounded border border-white/10 bg-black/50 px-2 py-1 text-[10px] text-gray-200"
-                            >
-                                {[2, 3, 4, 5, 6, 7, 8, 9, 10, 15].map((d) => (
-                                    <option key={d} value={d}>
-                                        {d}s
-                                    </option>
-                                ))}
-                            </select>
-                            {isSeedance20 ? (
-                                <select
-                                    value={params.seedanceI2vMode}
-                                    onChange={(e) => onParamsPatch({ seedanceI2vMode: e.target.value as SeedanceI2vMode })}
-                                    className="rounded border border-white/10 bg-black/50 px-2 py-1 text-[10px] text-gray-200"
-                                >
-                                    <option value="first_frame">首帧</option>
-                                    <option value="first_last_frame">首尾帧</option>
-                                    <option value="multimodal_ref">多图参考</option>
-                                </select>
-                            ) : null}
-                        </div>
-                        <div className="flex shrink-0 flex-wrap items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={onSubmitVideo}
-                                disabled={videoBusy || !primaryRaw || frame.locked}
-                                className="rounded-lg bg-emerald-600/90 px-2.5 py-1 text-xs text-white hover:bg-emerald-600 disabled:opacity-40"
-                            >
-                                {videoBusy ? <Loader2 size={12} className="mr-1 inline animate-spin" /> : null}
-                                生成视频
-                            </button>
-                            {pending ? <span className="text-[10px] text-amber-400">处理中…</span> : null}
-                        </div>
                         {completed.length > 0 ? (
                             <select
                                 className="max-w-full shrink-0 rounded border border-white/10 bg-black/50 px-2 py-1 text-[10px] text-gray-300"
@@ -394,6 +399,58 @@ function FrameWorkbenchRow({
                     </div>
 
                     <div className="flex h-full min-h-0 w-[min(14rem,24vw)] shrink-0 flex-col gap-1.5 border-l border-white/10 pl-2 sm:w-[14rem]">
+                        <div className="flex shrink-0 w-full flex-row flex-wrap items-center justify-between gap-2">
+                            <select
+                                value={params.duration}
+                                onChange={(e) => onParamsPatch({ duration: Number(e.target.value) })}
+                                className="min-w-0 shrink rounded border border-white/10 bg-black/50 px-2 py-1 text-[10px] text-gray-200"
+                                title="生成时长"
+                            >
+                                {[2, 3, 4, 5, 6, 7, 8, 9, 10, 15].map((d) => (
+                                    <option key={d} value={d}>
+                                        {d}s
+                                    </option>
+                                ))}
+                            </select>
+                            <div className="flex min-w-0 shrink-0 items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={onSubmitVideo}
+                                    disabled={videoBusy || (frame.locked || (!primaryRaw && !(isSeedance20 && params.seedanceI2vMode === "multimodal_ref")))}
+                                    className="whitespace-nowrap rounded-lg bg-emerald-600/90 px-2.5 py-1 text-[10px] text-white hover:bg-emerald-600 disabled:opacity-40"
+                                >
+                                    {videoBusy ? <Loader2 size={12} className="mr-1 inline animate-spin" /> : null}
+                                    生成视频
+                                </button>
+                                {pending ? <span className="text-[9px] text-amber-400">处理中</span> : null}
+                            </div>
+                        </div>
+                        <div className="shrink-0 flex flex-col gap-1">
+                            <select
+                                value={params.model}
+                                onChange={(e) => onParamsPatch({ model: e.target.value })}
+                                className="w-full rounded border border-white/10 bg-black/50 px-2 py-1 text-[10px] text-gray-200"
+                            >
+                                {I2V_MODELS.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                        {m.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <select
+                                value={isSeedance20 ? params.seedanceI2vMode : "first_frame"}
+                                onChange={(e) => onParamsPatch({ seedanceI2vMode: e.target.value as SeedanceI2vMode })}
+                                disabled={!isSeedance20}
+                                className={`w-full rounded border px-2 py-1 text-[10px] ${
+                                    isSeedance20
+                                        ? "border-white/10 bg-black/50 text-gray-200"
+                                        : "border-white/10 bg-black/30 text-gray-500 cursor-not-allowed"
+                                }`}
+                            >
+                                <option value="first_frame">首帧</option>
+                                <option value="multimodal_ref">多图参考</option>
+                            </select>
+                        </div>
                         <span className="shrink-0 text-[9px] font-bold uppercase text-gray-500">Preview</span>
                         {latestPreview ? (
                             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-white/10 bg-black/70">
@@ -414,10 +471,125 @@ function FrameWorkbenchRow({
                 </div>
             </div>
 
-            <div className="px-2 pb-2 pt-0.5 border-t border-white/10 bg-black/25">
-                <StoryboardFrameContextFields frameId={frame.id} />
-            </div>
         </div>
+
+        <AnimatePresence>
+            {refCompositionOpen ? (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-4 backdrop-blur-[2px]"
+                    onClick={() => setRefCompositionOpen(false)}
+                >
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.96 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.96 }}
+                        transition={{ duration: 0.15 }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="max-h-[min(72vh,32rem)] w-full max-w-md overflow-hidden rounded-xl border border-white/10 bg-[#1a1a1a] shadow-2xl flex flex-col"
+                    >
+                        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 shrink-0">
+                            <h3 className="text-sm font-bold text-white">分镜引用</h3>
+                            <button
+                                type="button"
+                                onClick={() => setRefCompositionOpen(false)}
+                                className="rounded p-1 text-gray-400 hover:bg-white/10 hover:text-white"
+                                aria-label="关闭"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto overscroll-contain px-4 py-3 space-y-4 text-xs">
+                            <section>
+                                <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wide text-gray-500">场景</div>
+                                {compositionScene ? (
+                                    <div className="flex gap-2 rounded-lg border border-white/10 bg-black/30 p-2">
+                                        {(getSelectedVariantUrl(compositionScene.image_asset) || compositionScene.image_url) ? (
+                                            <div className="h-12 w-16 shrink-0 overflow-hidden rounded border border-white/10 bg-black/50">
+                                                <img
+                                                    src={getAssetUrl(
+                                                        getSelectedVariantUrl(compositionScene.image_asset) || compositionScene.image_url
+                                                    )}
+                                                    alt=""
+                                                    className="h-full w-full object-cover"
+                                                />
+                                            </div>
+                                        ) : null}
+                                        <div className="min-w-0 flex-1">
+                                            <div className="font-medium text-gray-200">{compositionScene.name || "—"}</div>
+                                            {compositionScene.description ? (
+                                                <p className="mt-1 text-[10px] leading-snug text-gray-500">{compositionScene.description}</p>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <p className="text-[10px] text-gray-600">未选择场景</p>
+                                )}
+                            </section>
+
+                            <section>
+                                <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wide text-gray-500">人物</div>
+                                {compositionCharacters.length ? (
+                                    <ul className="space-y-2">
+                                        {compositionCharacters.map((char: any) => (
+                                            <li
+                                                key={char.id}
+                                                className="flex gap-2 rounded-lg border border-white/10 bg-black/30 p-2"
+                                            >
+                                                <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full border border-white/10 bg-gray-800">
+                                                    {char.avatar_url ? (
+                                                        <img src={getAssetUrl(char.avatar_url)} alt="" className="h-full w-full object-cover" />
+                                                    ) : null}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="font-medium text-gray-200">{char.name || "—"}</div>
+                                                    {char.description ? (
+                                                        <p className="mt-0.5 text-[10px] leading-snug text-gray-500 italic">{char.description}</p>
+                                                    ) : null}
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="text-[10px] text-gray-600">未选择角色</p>
+                                )}
+                            </section>
+
+                            <section>
+                                <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wide text-gray-500">道具</div>
+                                {compositionProps.length ? (
+                                    <ul className="space-y-2">
+                                        {compositionProps.map((prop: any) => (
+                                            <li
+                                                key={prop.id}
+                                                className="flex gap-2 rounded-lg border border-white/10 bg-black/30 p-2"
+                                            >
+                                                <div className="h-10 w-10 shrink-0 overflow-hidden rounded border border-white/10 bg-gray-800">
+                                                    {prop.image_url ? (
+                                                        <img src={getAssetUrl(prop.image_url)} alt="" className="h-full w-full object-cover" />
+                                                    ) : null}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="font-medium text-gray-200">{prop.name || "—"}</div>
+                                                    {prop.description ? (
+                                                        <p className="mt-0.5 text-[10px] leading-snug text-gray-500 italic">{prop.description}</p>
+                                                    ) : null}
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="text-[10px] text-gray-600">未选择道具</p>
+                                )}
+                            </section>
+                        </div>
+                    </motion.div>
+                </motion.div>
+            ) : null}
+        </AnimatePresence>
+        </>
     );
 }
 
@@ -439,32 +611,9 @@ type RowVideoParams = {
     seedanceI2vMode: SeedanceI2vMode;
 };
 
-export default function StoryboardVideoWorkbench() {
-    const currentProject = useProjectStore((s) => s.currentProject);
-    const selectedFrameId = useProjectStore((s) => s.selectedFrameId);
-    const setSelectedFrameId = useProjectStore((s) => s.setSelectedFrameId);
-    const updateProject = useProjectStore((s) => s.updateProject);
-    const renderingFrames = useProjectStore((s) => s.renderingFrames);
-    const addRenderingFrame = useProjectStore((s) => s.addRenderingFrame);
-    const removeRenderingFrame = useProjectStore((s) => s.removeRenderingFrame);
-    const isAnalyzing = useProjectStore((s) => s.isAnalyzingStoryboard);
-    const setIsAnalyzing = useProjectStore((s) => s.setIsAnalyzingStoryboard);
-
-    const [showScriptOverlay, setShowScriptOverlay] = useState(false);
-    const [editingFrameId, setEditingFrameId] = useState<string | null>(null);
-    const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-    const [insertIndex, setInsertIndex] = useState<number | null>(null);
-    const [extractingFrameId, setExtractingFrameId] = useState<string | null>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [uploadTargetFrameId, setUploadTargetFrameId] = useState<string | null>(null);
-
-    const [rowVideoPrompts, setRowVideoPrompts] = useState<Record<string, string>>({});
-    const [extraRefByFrame, setExtraRefByFrame] = useState<Record<string, string[]>>({});
-    const [videoBusyByFrame, setVideoBusyByFrame] = useState<Record<string, boolean>>({});
-
-    const defaultI2v = currentProject?.model_settings?.i2v_model || "wan2.5-i2v-preview";
-    const [params, setParams] = useState<RowVideoParams>({
-        model: defaultI2v,
+function createDefaultRowVideoParams(model: string): RowVideoParams {
+    return {
+        model,
         duration: 5,
         resolution: "720p",
         generateAudio: true,
@@ -479,15 +628,69 @@ export default function StoryboardVideoWorkbench() {
         viduAudio: true,
         movementAmplitude: "auto",
         seedanceI2vMode: "first_frame",
-    });
+    };
+}
 
-    useEffect(() => {
-        if (currentProject?.model_settings?.i2v_model) {
-            setParams((p) => ({ ...p, model: currentProject.model_settings!.i2v_model! }));
-        }
-    }, [currentProject?.model_settings?.i2v_model]);
+function applyRowVideoParamsPatch(prev: RowVideoParams, patch: Partial<RowVideoParams>): RowVideoParams {
+    const next = { ...prev, ...patch };
+    if (patch.model !== undefined && patch.model !== SEEDANCE_20_MODEL_ID) {
+        next.seedanceI2vMode = "first_frame";
+    }
+    if (patch.seedanceI2vMode === "first_last_frame") {
+        next.seedanceI2vMode = "first_frame";
+    }
+    return next;
+}
+
+export default function StoryboardVideoWorkbench() {
+    const currentProject = useProjectStore((s) => s.currentProject);
+    const selectedFrameId = useProjectStore((s) => s.selectedFrameId);
+    const setSelectedFrameId = useProjectStore((s) => s.setSelectedFrameId);
+    const updateProject = useProjectStore((s) => s.updateProject);
+    const renderingFrames = useProjectStore((s) => s.renderingFrames);
+    const addRenderingFrame = useProjectStore((s) => s.addRenderingFrame);
+    const removeRenderingFrame = useProjectStore((s) => s.removeRenderingFrame);
+    const isAnalyzing = useProjectStore((s) => s.isAnalyzingStoryboard);
+    const setIsAnalyzing = useProjectStore((s) => s.setIsAnalyzingStoryboard);
+    const generatingTasks = useProjectStore((s) => s.generatingTasks || []);
+    const addGeneratingTask = useProjectStore((s) => s.addGeneratingTask);
+    const removeGeneratingTask = useProjectStore((s) => s.removeGeneratingTask);
+
+    const [showScriptOverlay, setShowScriptOverlay] = useState(false);
+    const [editingFrameId, setEditingFrameId] = useState<string | null>(null);
+    const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+    const [insertIndex, setInsertIndex] = useState<number | null>(null);
+    const [extractingFrameId, setExtractingFrameId] = useState<string | null>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [uploadTargetFrameId, setUploadTargetFrameId] = useState<string | null>(null);
+
+    type RefAssetOpenTarget = {
+        refKind: FrameReferenceThumb["refKind"];
+        assetId: string;
+        characterSlot?: FrameReferenceThumb["characterSlot"];
+    };
+    const [refAssetTarget, setRefAssetTarget] = useState<RefAssetOpenTarget | null>(null);
+
+    const [rowVideoPrompts, setRowVideoPrompts] = useState<Record<string, string>>({});
+    const [videoBusyByFrame, setVideoBusyByFrame] = useState<Record<string, boolean>>({});
+    const [rowVideoParamsByFrameId, setRowVideoParamsByFrameId] = useState<Record<string, RowVideoParams>>({});
 
     const frames = currentProject?.frames || [];
+    const projectDefaultI2v = currentProject?.model_settings?.i2v_model || "wan2.5-i2v-preview";
+    const frameIdKey = frames.map((f: any) => f.id).join(",");
+
+    useEffect(() => {
+        if (!currentProject) return;
+        const projectModel = currentProject.model_settings?.i2v_model || "wan2.5-i2v-preview";
+        const frameIds = (currentProject.frames || []).map((f: any) => f.id);
+        setRowVideoParamsByFrameId((prev) => {
+            const next: Record<string, RowVideoParams> = {};
+            for (const id of frameIds) {
+                next[id] = prev[id] ?? createDefaultRowVideoParams(projectModel);
+            }
+            return next;
+        });
+    }, [currentProject?.id, frameIdKey, currentProject?.model_settings?.i2v_model]);
     const tasks = currentProject?.video_tasks || [];
 
     useEffect(() => {
@@ -620,8 +823,12 @@ export default function StoryboardVideoWorkbench() {
 
     const submitVideoForFrame = async (frame: any) => {
         if (!currentProject) return;
+        const params =
+            rowVideoParamsByFrameId[frame.id] ?? createDefaultRowVideoParams(projectDefaultI2v);
+        const isSeedance20 = params.model === SEEDANCE_20_MODEL_ID;
+        const isSeedance20Multimodal = isSeedance20 && params.seedanceI2vMode === "multimodal_ref";
         const primaryRaw = frame.rendered_image_url || frame.image_url;
-        if (!primaryRaw) {
+        if (!primaryRaw && !isSeedance20Multimodal) {
             alert("请先生成首帧");
             return;
         }
@@ -633,17 +840,27 @@ export default function StoryboardVideoWorkbench() {
             return;
         }
 
-        const extras = extraRefByFrame[frame.id] || [];
-        const primaryDisplay = getAssetUrl(primaryRaw);
-        let ordered: string[] = [primaryDisplay, ...extras];
+        const primaryDisplay = primaryRaw ? getAssetUrl(primaryRaw) : "";
+        let extras: string[] = [];
+        if (params.model === SEEDANCE_20_MODEL_ID) {
+            if (params.seedanceI2vMode === "multimodal_ref") {
+                extras = buildFrameReferenceThumbnails(currentProject, frame)
+                    .map((t) => getAssetUrl(t.url))
+                    .filter(Boolean);
+            }
+        }
+
+        let ordered: string[] = isSeedance20Multimodal ? [...extras] : [primaryDisplay, ...extras];
         const seen = new Set<string>();
         ordered = ordered.filter((u) => {
             if (!u || seen.has(u)) return false;
             seen.add(u);
             return true;
         });
+        if (ordered.length > 9) {
+            ordered = ordered.slice(0, 9);
+        }
 
-        const isSeedance20 = params.model === SEEDANCE_20_MODEL_ID;
         if (isSeedance20) {
             const m = params.seedanceI2vMode;
             const n = ordered.length;
@@ -651,12 +868,8 @@ export default function StoryboardVideoWorkbench() {
                 alert("首帧模式仅使用本镜首图；请清空附加参考。");
                 return;
             }
-            if (m === "first_last_frame" && n !== 2) {
-                alert("首尾帧模式需要恰好 2 张图（本镜首帧 + 另一张尾帧）。");
-                return;
-            }
             if (m === "multimodal_ref" && (n < 1 || n > 9)) {
-                alert("多图参考需要 1～9 张图。");
+                alert("多图参考需要 1～9 张资产参考图。");
                 return;
             }
         }
@@ -727,6 +940,191 @@ export default function StoryboardVideoWorkbench() {
             setVideoBusyByFrame((b) => ({ ...b, [frame.id]: false }));
         }
     };
+
+    const refOpenAsset = useMemo(() => {
+        if (!refAssetTarget || !currentProject) return null;
+        const { refKind, assetId } = refAssetTarget;
+        if (refKind === "character") {
+            return currentProject.characters?.find((c: any) => c.id === assetId) ?? null;
+        }
+        if (refKind === "scene") {
+            return currentProject.scenes?.find((s: any) => s.id === assetId) ?? null;
+        }
+        return currentProject.props?.find((p: any) => p.id === assetId) ?? null;
+    }, [refAssetTarget, currentProject]);
+
+    const refCharacterInitialPanel = useMemo((): "full_body" | "three_view" | "headshot" | undefined => {
+        if (!refAssetTarget || refAssetTarget.refKind !== "character") return undefined;
+        const s = refAssetTarget.characterSlot;
+        if (s === "three_view") return "three_view";
+        if (s === "headshot") return "headshot";
+        return "full_body";
+    }, [refAssetTarget]);
+
+    const isAssetGenerating = (assetId: string) => generatingTasks.some((t: any) => t.assetId === assetId);
+    const getAssetGeneratingTypes = (assetId: string) =>
+        generatingTasks.filter((t: any) => t.assetId === assetId).map((t: any) => ({ type: t.generationType, batchSize: t.batchSize }));
+
+    const handleRefUpdateDescription = async (assetId: string, type: string, description: string) => {
+        if (!currentProject) return;
+        try {
+            const updatedProject = await api.updateAssetDescription(currentProject.id, assetId, type, description);
+            updateProject(currentProject.id, updatedProject);
+        } catch (error) {
+            console.error("Failed to update description:", error);
+        }
+    };
+
+    const handleRefGenerate = async (
+        assetId: string,
+        type: string,
+        generationType: string = "all",
+        prompt: string = "",
+        applyStyle: boolean = true,
+        negativePrompt: string = "",
+        batchSize: number = 1
+    ) => {
+        if (!currentProject) return;
+        if (addGeneratingTask) addGeneratingTask(assetId, generationType, batchSize);
+        try {
+            const stylePrompt = currentProject?.art_direction?.style_config?.positive_prompt || "";
+            const response = await api.generateAsset(
+                currentProject.id,
+                assetId,
+                type,
+                "ArtDirection",
+                stylePrompt,
+                generationType,
+                prompt,
+                applyStyle,
+                negativePrompt,
+                batchSize,
+                currentProject.model_settings?.t2i_model
+            );
+            const taskId = response._task_id;
+            if (taskId) {
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const status = await api.getTaskStatus(taskId);
+                        if (status.status === "completed") {
+                            clearInterval(pollInterval);
+                            const updatedProject = await api.getProject(currentProject.id);
+                            updateProject(currentProject.id, updatedProject);
+                            if (removeGeneratingTask) removeGeneratingTask(assetId, generationType);
+                        } else if (status.status === "failed") {
+                            clearInterval(pollInterval);
+                            console.error("Asset generation failed:", status.error);
+                            alert(status.error || "生成失败，请稍后重试");
+                            try {
+                                const updatedProject = await api.getProject(currentProject.id);
+                                updateProject(currentProject.id, updatedProject);
+                            } catch (refreshError) {
+                                console.error("Failed to refresh project:", refreshError);
+                            }
+                            if (removeGeneratingTask) removeGeneratingTask(assetId, generationType);
+                        }
+                    } catch (pollError: any) {
+                        console.error("Polling error:", pollError);
+                        clearInterval(pollInterval);
+                        alert(`轮询任务状态失败: ${pollError.message || "网络错误"}`);
+                        if (removeGeneratingTask) removeGeneratingTask(assetId, generationType);
+                    }
+                }, 2000);
+            } else {
+                updateProject(currentProject.id, response);
+                if (removeGeneratingTask) removeGeneratingTask(assetId, generationType);
+            }
+        } catch (error: any) {
+            console.error("Failed to generate asset:", error);
+            alert(`启动生成任务失败: ${error.response?.data?.detail || error.message}`);
+            if (removeGeneratingTask) removeGeneratingTask(assetId, generationType);
+        }
+    };
+
+    const handleRefGenerateVideo = async (
+        assetId: string,
+        type: string,
+        prompt: string,
+        duration: number,
+        assetSubType: string = "full_body"
+    ) => {
+        if (!currentProject) return;
+        let finalAssetType: "full_body" | "head_shot" | "scene" | "prop" = "full_body";
+        if (type === "scene") {
+            finalAssetType = "scene";
+        } else if (type === "prop") {
+            finalAssetType = "prop";
+        } else if (assetSubType === "head_shot") {
+            finalAssetType = "head_shot";
+        } else {
+            finalAssetType = "full_body";
+        }
+        const generationType = assetSubType === "head_shot" ? "video_head_shot" : "video_full_body";
+        if (addGeneratingTask) addGeneratingTask(assetId, generationType, 1);
+        try {
+            const response = await api.generateMotionRef(
+                currentProject.id,
+                assetId,
+                finalAssetType,
+                prompt,
+                undefined,
+                duration
+            );
+            const taskId = response._task_id;
+            if (taskId) {
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const status = await api.getTaskStatus(taskId);
+                        if (status.status === "completed") {
+                            clearInterval(pollInterval);
+                            const updatedProject = await api.getProject(currentProject.id);
+                            updateProject(currentProject.id, updatedProject);
+                            if (removeGeneratingTask) removeGeneratingTask(assetId, generationType);
+                        } else if (status.status === "failed") {
+                            clearInterval(pollInterval);
+                            alert(`视频生成失败: ${status.error || "生成失败，请稍后重试"}`);
+                            if (removeGeneratingTask) removeGeneratingTask(assetId, generationType);
+                            const updatedProject = await api.getProject(currentProject.id);
+                            updateProject(currentProject.id, updatedProject);
+                        }
+                    } catch (pollError: any) {
+                        console.error("Video polling error:", pollError);
+                        clearInterval(pollInterval);
+                        alert(`视频轮询失败: ${pollError.message || "网络错误"}`);
+                        if (removeGeneratingTask) removeGeneratingTask(assetId, generationType);
+                    }
+                }, 3000);
+            } else {
+                updateProject(currentProject.id, response);
+                if (removeGeneratingTask) removeGeneratingTask(assetId, generationType);
+            }
+        } catch (error: any) {
+            console.error("Failed to generate video:", error);
+            alert(`启动视频生成失败: ${error.response?.data?.detail || error.message}`);
+            if (removeGeneratingTask) removeGeneratingTask(assetId, generationType);
+        }
+    };
+
+    const handleRefDeleteVideo = async (assetId: string, type: string, videoId: string) => {
+        if (!currentProject) return;
+        if (!confirm("Are you sure you want to delete this video? This action cannot be undone.")) return;
+        try {
+            await api.deleteAssetVideo(currentProject.id, type, assetId, videoId);
+            const updatedProject = await api.getProject(currentProject.id);
+            updateProject(currentProject.id, updatedProject);
+        } catch (error: any) {
+            console.error("Failed to delete video:", error);
+            alert(`Failed to delete video: ${error.message}`);
+        }
+    };
+
+    const onOpenAssetRef = useCallback((thumb: FrameReferenceThumb) => {
+        setRefAssetTarget({
+            refKind: thumb.refKind,
+            assetId: thumb.assetId,
+            characterSlot: thumb.characterSlot,
+        });
+    }, []);
 
     const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -883,25 +1281,21 @@ export default function StoryboardVideoWorkbench() {
                                         [frame.id]: v,
                                     }))
                                 }
-                                extraRefs={extraRefByFrame[frame.id] || []}
-                                onAddExtraRef={(url) =>
-                                    setExtraRefByFrame((prev) => ({
-                                        ...prev,
-                                        [frame.id]: [...(prev[frame.id] || []), url],
-                                    }))
+                                params={
+                                    rowVideoParamsByFrameId[frame.id] ??
+                                    createDefaultRowVideoParams(projectDefaultI2v)
                                 }
-                                onRemoveExtraRef={(i) =>
-                                    setExtraRefByFrame((prev) => {
-                                        const list = [...(prev[frame.id] || [])];
-                                        list.splice(i, 1);
-                                        return { ...prev, [frame.id]: list };
+                                onParamsPatch={(patch) =>
+                                    setRowVideoParamsByFrameId((m) => {
+                                        const prev =
+                                            m[frame.id] ?? createDefaultRowVideoParams(projectDefaultI2v);
+                                        return { ...m, [frame.id]: applyRowVideoParamsPatch(prev, patch) };
                                     })
                                 }
-                                params={params}
-                                onParamsPatch={(patch) => setParams((p) => ({ ...p, ...patch }))}
                                 onSubmitVideo={() => submitVideoForFrame(frame)}
                                 videoBusy={!!videoBusyByFrame[frame.id]}
                                 tasksForFrame={tasksForFrame}
+                                onOpenAssetRef={onOpenAssetRef}
                             />
                         );
                     })}
@@ -970,6 +1364,78 @@ export default function StoryboardVideoWorkbench() {
                             setInsertIndex(null);
                         }}
                         scenes={currentProject.scenes || []}
+                    />
+                ) : null}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {refAssetTarget && refOpenAsset && refAssetTarget.refKind === "character" ? (
+                    <CharacterWorkbench
+                        key={`refs-wb-${refAssetTarget.assetId}-${refAssetTarget.characterSlot ?? "fb"}`}
+                        asset={refOpenAsset}
+                        initialActivePanel={refCharacterInitialPanel}
+                        onClose={() => setRefAssetTarget(null)}
+                        onUpdateDescription={(desc: string) =>
+                            handleRefUpdateDescription(refAssetTarget.assetId, "character", desc)
+                        }
+                        onGenerate={(type: string, prompt: string, applyStyle: boolean, negativePrompt: string, batchSize: number) =>
+                            handleRefGenerate(
+                                refAssetTarget.assetId,
+                                "character",
+                                type,
+                                prompt,
+                                applyStyle,
+                                negativePrompt,
+                                batchSize
+                            )
+                        }
+                        generatingTypes={getAssetGeneratingTypes(refAssetTarget.assetId)}
+                        stylePrompt={currentProject.art_direction?.style_config?.positive_prompt || ""}
+                        styleNegativePrompt={currentProject.art_direction?.style_config?.negative_prompt || ""}
+                        onGenerateVideo={(prompt: string, duration: number, subType?: string) =>
+                            handleRefGenerateVideo(
+                                refAssetTarget.assetId,
+                                "character",
+                                prompt,
+                                duration,
+                                subType || "video"
+                            )
+                        }
+                        onDeleteVideo={(videoId: string) =>
+                            handleRefDeleteVideo(refAssetTarget.assetId, "character", videoId)
+                        }
+                    />
+                ) : refAssetTarget && refOpenAsset && (refAssetTarget.refKind === "scene" || refAssetTarget.refKind === "prop") ? (
+                    <CharacterDetailModal
+                        asset={refOpenAsset}
+                        type={refAssetTarget.refKind}
+                        onClose={() => setRefAssetTarget(null)}
+                        onUpdateDescription={(desc: string) =>
+                            handleRefUpdateDescription(refAssetTarget.assetId, refAssetTarget.refKind, desc)
+                        }
+                        onGenerate={(applyStyle: boolean, negativePrompt: string, batchSize: number) =>
+                            handleRefGenerate(
+                                refAssetTarget.assetId,
+                                refAssetTarget.refKind,
+                                "all",
+                                "",
+                                applyStyle,
+                                negativePrompt,
+                                batchSize
+                            )
+                        }
+                        isGenerating={isAssetGenerating(refAssetTarget.assetId)}
+                        stylePrompt={currentProject.art_direction?.style_config?.positive_prompt || ""}
+                        styleNegativePrompt={currentProject.art_direction?.style_config?.negative_prompt || ""}
+                        onGenerateVideo={(prompt: string, duration: number) =>
+                            handleRefGenerateVideo(refAssetTarget.assetId, refAssetTarget.refKind, prompt, duration, "video")
+                        }
+                        onDeleteVideo={(videoId: string) =>
+                            handleRefDeleteVideo(refAssetTarget.assetId, refAssetTarget.refKind, videoId)
+                        }
+                        isGeneratingVideo={getAssetGeneratingTypes(refAssetTarget.assetId).some((t: any) =>
+                            String(t.type).startsWith("video")
+                        )}
                     />
                 ) : null}
             </AnimatePresence>

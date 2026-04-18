@@ -6,13 +6,15 @@ import { Wand2, Sparkles } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
 
-/** Action / Dialogue（左列上下）+ 首帧提示词与 Auto-Compose / Polish */
+/** Action / Dialogue 左列上下对半 + 首帧提示词与 Auto-Compose / Polish */
 export default function StoryboardFirstFramePromptColumn({
     frameId,
     className = "",
+    hideFirstFrameSection = false,
 }: {
     frameId: string;
     className?: string;
+    hideFirstFrameSection?: boolean;
 }) {
     const currentProject = useProjectStore((s) => s.currentProject);
     const updateProject = useProjectStore((s) => s.updateProject);
@@ -123,59 +125,66 @@ export default function StoryboardFirstFramePromptColumn({
             className={`flex h-full min-h-0 flex-col items-stretch gap-1.5 min-w-0 sm:flex-row ${className}`}
             onClick={(e) => e.stopPropagation()}
         >
-            <div className="flex h-auto min-h-0 w-full shrink-0 flex-col gap-1.5 sm:h-full sm:min-w-[8.5rem] sm:max-w-[16rem] sm:flex-1 sm:basis-0">
-                <div className="flex shrink-0 flex-col space-y-1">
-                    <label className="shrink-0 text-[10px] font-bold uppercase text-gray-500">Action / Visuals</label>
-                    <textarea
-                        className="h-10 max-h-10 min-h-0 w-full resize-none overflow-y-auto rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-gray-300 focus:border-primary/50 focus:outline-none"
-                        value={frame.action_description || ""}
-                        onChange={(e) => updateFrame({ action_description: e.target.value })}
-                        placeholder="Describe the action..."
-                    />
-                </div>
-                <div className="flex min-h-0 flex-1 flex-col gap-1">
-                    <label className="shrink-0 text-[10px] font-bold uppercase text-gray-500">Dialogue</label>
-                    <textarea
-                        className="min-h-[2.5rem] w-full flex-1 resize-none overflow-y-auto rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-gray-300 focus:border-primary/50 focus:outline-none"
-                        value={frame.dialogue || ""}
-                        onChange={(e) => updateFrame({ dialogue: e.target.value })}
-                        placeholder="Speaker: Content"
-                    />
+            <div
+                className={`flex h-full min-h-0 w-full shrink-0 flex-col gap-1.5 sm:basis-0 sm:min-w-0 ${
+                    hideFirstFrameSection ? "sm:flex-1" : "sm:min-w-[8.5rem] sm:max-w-[16rem] sm:flex-1"
+                }`}
+            >
+                <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+                    <div className="flex min-h-0 flex-1 flex-col gap-1 basis-0">
+                        <label className="shrink-0 text-[10px] font-bold uppercase text-gray-500">Action / Visuals</label>
+                        <textarea
+                            className="min-h-0 w-full flex-1 resize-none overflow-y-auto rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-gray-300 focus:border-primary/50 focus:outline-none"
+                            value={frame.action_description || ""}
+                            onChange={(e) => updateFrame({ action_description: e.target.value })}
+                            placeholder="Describe the action..."
+                        />
+                    </div>
+                    <div className="flex min-h-0 flex-1 flex-col gap-1 basis-0">
+                        <label className="shrink-0 text-[10px] font-bold uppercase text-gray-500">Dialogue</label>
+                        <textarea
+                            className="min-h-0 w-full flex-1 resize-none overflow-y-auto rounded-lg border border-white/10 bg-black/30 px-2 py-1 text-xs text-gray-300 focus:border-primary/50 focus:outline-none"
+                            value={frame.dialogue || ""}
+                            onChange={(e) => updateFrame({ dialogue: e.target.value })}
+                            placeholder="Speaker: Content"
+                        />
+                    </div>
                 </div>
             </div>
 
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-hidden sm:basis-0">
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <span className="text-[9px] uppercase text-gray-500 font-bold tracking-wider">First frame</span>
-                    <button
-                        type="button"
-                        onClick={handleComposePrompt}
-                        className="flex items-center gap-1 text-[10px] bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-white transition-colors"
-                    >
-                        <Wand2 size={10} /> Auto-Compose
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => handlePolish()}
-                        disabled={isPolishing}
-                        className="flex items-center gap-1 text-[10px] bg-purple-600 hover:bg-purple-700 px-2 py-1 rounded text-white transition-colors disabled:opacity-50"
-                    >
-                        {isPolishing ? <Sparkles size={10} className="animate-spin" /> : <Sparkles size={10} />} Polish
-                    </button>
-                </div>
-                <textarea
-                    className="min-h-[4rem] w-full flex-1 resize-none overflow-y-auto rounded-lg border border-white/10 bg-black/40 p-1.5 text-xs text-gray-200 focus:border-primary/50 focus:outline-none"
-                    value={frame.image_prompt || ""}
-                    onChange={(e) => updateFrame({ image_prompt: e.target.value })}
-                    placeholder="首帧 / 生图提示词…"
-                />
+            {!hideFirstFrameSection ? (
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-1.5 overflow-hidden sm:basis-0">
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        <span className="text-[9px] uppercase text-gray-500 font-bold tracking-wider">First frame</span>
+                        <button
+                            type="button"
+                            onClick={handleComposePrompt}
+                            className="flex items-center gap-1 text-[10px] bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-white transition-colors"
+                        >
+                            <Wand2 size={10} /> Auto-Compose
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handlePolish()}
+                            disabled={isPolishing}
+                            className="flex items-center gap-1 text-[10px] bg-purple-600 hover:bg-purple-700 px-2 py-1 rounded text-white transition-colors disabled:opacity-50"
+                        >
+                            {isPolishing ? <Sparkles size={10} className="animate-spin" /> : <Sparkles size={10} />} Polish
+                        </button>
+                    </div>
+                    <textarea
+                        className="min-h-[4rem] w-full flex-1 resize-none overflow-y-auto rounded-lg border border-white/10 bg-black/40 p-1.5 text-xs text-gray-200 focus:border-primary/50 focus:outline-none"
+                        value={frame.image_prompt || ""}
+                        onChange={(e) => updateFrame({ image_prompt: e.target.value })}
+                        placeholder="首帧 / 生图提示词…"
+                    />
 
-                {polishedPrompt ? (
-                <motion.div
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="max-h-36 shrink-0 space-y-2 overflow-y-auto overscroll-contain rounded-lg border border-purple-500/30 bg-purple-900/20 p-2 text-[10px]"
-                >
+                    {polishedPrompt ? (
+                    <motion.div
+                        initial={{ opacity: 0, y: -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="max-h-36 shrink-0 space-y-2 overflow-y-auto overscroll-contain rounded-lg border border-purple-500/30 bg-purple-900/20 p-2 text-[10px]"
+                    >
                     <div className="flex justify-between items-start gap-1">
                         <span className="font-bold text-purple-400 flex items-center gap-1">
                             <Wand2 size={10} /> 双语润色
@@ -264,9 +273,10 @@ export default function StoryboardFirstFramePromptColumn({
                             再润色
                         </button>
                     </div>
-                </motion.div>
-                ) : null}
-            </div>
+                    </motion.div>
+                    ) : null}
+                </div>
+            ) : null}
         </div>
     );
 }
