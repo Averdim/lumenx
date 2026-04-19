@@ -63,6 +63,7 @@ export default function SeriesModelSettingsModal({ isOpen, onClose, seriesId, on
                 prop_aspect_ratio: propAspectRatio,
                 storyboard_aspect_ratio: storyboardAspectRatio,
                 llm_model: llmModel,
+                llm_backend: "auto",
             });
             onSaved?.();
             onClose();

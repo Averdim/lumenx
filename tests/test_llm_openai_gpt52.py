@@ -1,11 +1,11 @@
 """
 Tests for text LLM via OpenAI-compatible gateway (e.g. 空氧) with GPT-5.2.
 
-- `tests/conftest.py` loads the project root `.env`, so live tests pick up
-  `LLM_PROVIDER`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL` without manual export.
+- Routing resolves to openai_kongyang; legacy OPENAI_API_KEY + OPENAI_BASE_URL still work.
+- `tests/conftest.py` loads the project root `.env` for optional live runs.
 - Default tests use mocks (no network, no real API keys).
-- Optional live test runs only when `LLM_PROVIDER=openai` and gateway variables are set.
-  Run manually: pytest tests/test_llm_openai_gpt52.py -k live -v
+- Live test: `LLM_PROVIDER=openai` and OPENAI_* (or KONGYANG_*) set. Run:
+  pytest tests/test_llm_openai_gpt52.py -k live -v
 """
 
 import os
@@ -17,10 +17,12 @@ from src.apps.comic_gen.llm_adapter import LLMAdapter
 
 
 def _llm_openai_text_gateway_configured() -> bool:
-    """Match production: openai provider + key + base URL (model can default to gpt-5.2 in code)."""
+    """LLM_PROVIDER=openai (Kongyang path) with key + base (legacy OPENAI_* or OPENAI_KONGYANG_*)."""
     if os.getenv("LLM_PROVIDER", "dashscope").lower() != "openai":
         return False
-    return bool(os.getenv("OPENAI_API_KEY") and os.getenv("OPENAI_BASE_URL"))
+    key = os.getenv("OPENAI_KONGYANG_API_KEY") or os.getenv("OPENAI_API_KEY")
+    base = os.getenv("OPENAI_KONGYANG_BASE_URL") or os.getenv("OPENAI_BASE_URL")
+    return bool(key and base)
 
 
 def test_llm_openai_chat_mocked_gpt52(monkeypatch):
@@ -134,7 +136,7 @@ def test_llm_openai_chat_mocked_model_override(monkeypatch):
 @pytest.mark.skipif(
     not _llm_openai_text_gateway_configured(),
     reason=(
-        "Set LLM_PROVIDER=openai, OPENAI_API_KEY, OPENAI_BASE_URL in .env "
+        "Set LLM_PROVIDER=openai and OPENAI_* or OPENAI_KONGYANG_* key+base in .env "
         "(OPENAI_MODEL optional; defaults to gpt-5.2 per llm_adapter)."
     ),
 )

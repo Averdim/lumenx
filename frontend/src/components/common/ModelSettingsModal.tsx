@@ -52,7 +52,8 @@ export default function ModelSettingsModal({ isOpen, onClose }: ModelSettingsMod
                 sceneAspectRatio,
                 propAspectRatio,
                 storyboardAspectRatio,
-                llmModel
+                llmModel,
+                "auto"
             );
             updateProject(currentProject.id, updated);
             onClose();

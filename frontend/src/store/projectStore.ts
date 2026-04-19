@@ -139,7 +139,7 @@ export interface ModelSettings {
     storyboard_aspect_ratio: string;  // Aspect ratio for Storyboard generation
     /** Chat/LLM model; empty string = server default (LLM_PROVIDER / OPENAI_MODEL / DashScope default) */
     llm_model?: string;
-    /** auto = prefix registry; dashscope | openai = force channel */
+    /** auto = prefix registry; dashscope | openai_kongyang | openai_geeknow (legacy openai→kongyang on server) */
     llm_backend?: string;
 }
 
@@ -149,8 +149,19 @@ export const LLM_MODELS = [
     { id: 'qwen3.5-plus', name: 'Qwen 3.5 Plus', description: 'DashScope compatible-mode default' },
     { id: 'qwen-plus', name: 'Qwen Plus', description: 'DashScope' },
     { id: 'qwen-max', name: 'Qwen Max', description: 'DashScope' },
-    { id: 'gpt-5.2', name: 'GPT-5.2', description: '空氧等 OpenAI 兼容网关；LLM_PROVIDER=openai' },
-    { id: 'gemini2.5-flash', name: 'Gemini 2.5 Flash', description: 'Gemini 2.5 Flash' },
+    { id: 'gpt-5.2-kongyang', name: 'GPT-5.2（空氧）', description: '模型 id 带 -kongyang；请求上游自动为 gpt-5.2' },
+    { id: 'gpt-5.2-geeknow', name: 'GPT-5.2（GeekNow）', description: '模型 id 带 -geeknow；请求上游自动为 gpt-5.2' },
+    { id: 'gemini2.5-flash', name: 'Gemini 2.5 Flash', description: 'Auto：gemini* → 空氧（OPENAI_KONGYANG_* 或 OPENAI_*）' },
+    {
+        id: 'gemini-3-flash-preview',
+        name: 'Gemini 3 Flash (preview)',
+        description: 'OpenAI 兼容 chat；gemini* → 空氧；id 与网关目录一致',
+    },
+    {
+        id: 'gemini-3-pro-preview',
+        name: 'Gemini 3 Pro Preview',
+        description: 'OpenAI 兼容 chat；gemini* → 空氧；id 与网关目录一致',
+    },
 ];
 
 // Model options for dropdowns
@@ -160,6 +171,16 @@ export const T2I_MODELS = [
         id: 'gemini-3.1-flash-image-preview',
         name: 'Gemini 3.1 Flash Image',
         description: 'T2I via OpenAI-compatible gateway (IMAGE_OPENAI_* env)',
+    },
+    {
+        id: 'seedream3.0',
+        name: 'Seedream 3.0',
+        description: 'T2I 与 Gemini Flash Image 相同通路（IMAGE_OPENAI_*）',
+    },
+    {
+        id: 'z-image-turbo',
+        name: 'Z-Image Turbo',
+        description: 'T2I/I2I 均为 /v1/images/generations；有参考图时在 JSON 中带参考图（见 .env IMAGE_GENERATIONS_REF_*）',
     },
     { id: 'wan2.5-t2i-preview', name: 'Wan 2.5 T2I Preview', description: 'Default T2I' },
     { id: 'wan2.2-t2i-plus', name: 'Wan 2.2 T2I Plus', description: 'Higher quality' },
@@ -173,6 +194,16 @@ export const I2I_MODELS = [
         id: 'gemini-3.1-flash-image-preview',
         name: 'Gemini 3.1 Flash Image',
         description: 'I2I via OpenAI-compatible gateway (IMAGE_OPENAI_* env)',
+    },
+    {
+        id: 'seedream3.0',
+        name: 'Seedream 3.0',
+        description: 'I2I 与 Gemini Flash Image 相同通路（IMAGE_OPENAI_*）',
+    },
+    {
+        id: 'z-image-turbo',
+        name: 'Z-Image Turbo',
+        description: 'I2I：同 generations，首张参考图写入 JSON（默认 image=base64）；无参考图即纯 T2I',
     },
 ];
 

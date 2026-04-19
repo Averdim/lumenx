@@ -7,7 +7,7 @@ from http import HTTPStatus
 from dashscope import VideoSynthesis
 import dashscope
 from .base import VideoGenModel
-from ..utils import get_logger
+from ..utils import get_logger, log_generation_model
 from ..utils.endpoints import get_provider_base_url
 
 from typing import Callable, Dict, List, Mapping, Optional, Tuple
@@ -435,7 +435,7 @@ class WanxModel(VideoGenModel):
         
         logger.info(f"Calling {model_name} HTTP API (async)...")
         logger.info(f"Payload: {payload}")
-        
+        log_generation_model("video", model_name, "provider=wan dashscope i2v-http")
         # Step 1: Create task
         response = requests.post(create_url, headers=headers, json=payload, timeout=120)  # 2 minutes for task creation
         
@@ -535,7 +535,7 @@ class WanxModel(VideoGenModel):
         
         logger.info(f"Calling {model_name} HTTP API (async)...")
         logger.info(f"Payload: {payload}")
-        
+        log_generation_model("video", model_name, "provider=wan dashscope r2v-http")
         # Step 1: Create task
         response = requests.post(create_url, headers=headers, json=payload, timeout=120)
         
@@ -630,6 +630,7 @@ class WanxModel(VideoGenModel):
             call_args['img_url'] = img_url
             logger.info(f"Image to Video mode. Input Image URL: {img_url}")
 
+        log_generation_model("video", model_name, "provider=wan dashscope VideoSynthesis SDK")
         rsp = VideoSynthesis.async_call(**call_args)
         
         if rsp.status_code != HTTPStatus.OK:

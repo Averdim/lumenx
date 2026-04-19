@@ -3,8 +3,14 @@ from dataclasses import dataclass, field, replace
 from typing import Dict, Mapping, Optional, Sequence, Tuple
 
 
-# "openai" = OpenAI-compatible URL + OPENAI_API_KEY (used by text LLM routing in llm_provider_registry).
-SUPPORTED_PROVIDER_BACKENDS = ("dashscope", "vendor", "openai")
+# "openai" = image/video OpenAI-compatible vendors; text LLM also uses openai_kongyang / openai_geeknow.
+SUPPORTED_PROVIDER_BACKENDS = (
+    "dashscope",
+    "vendor",
+    "openai",
+    "openai_kongyang",
+    "openai_geeknow",
+)
 
 
 @dataclass
@@ -148,6 +154,28 @@ DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
     ),
     ProviderFamilyConfig(
         model_family="gemini",
+        backend_default="openai",
+        credential_sources={
+            "openai": ("IMAGE_OPENAI_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2i"),
+        image_input_mode={
+            "openai": "openai_compatible_image_url",
+        },
+    ),
+    ProviderFamilyConfig(
+        model_family="seedream",
+        backend_default="openai",
+        credential_sources={
+            "openai": ("IMAGE_OPENAI_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2i"),
+        image_input_mode={
+            "openai": "openai_compatible_image_url",
+        },
+    ),
+    ProviderFamilyConfig(
+        model_family="z-image",
         backend_default="openai",
         credential_sources={
             "openai": ("IMAGE_OPENAI_API_KEY",),

@@ -14,6 +14,7 @@ import requests
 
 from .base import VideoGenModel
 from ..utils.endpoints import get_provider_base_url
+from ..utils import log_generation_model
 from ..utils.oss_utils import OSSImageUploader
 from ..utils.provider_media import resolve_media_input
 
@@ -175,6 +176,7 @@ class ViduModel(VideoGenModel):
 
         submit_url = f"{get_provider_base_url('VIDU')}/text2video"
         logger.info(f"[Vidu] Submitting t2v task (model={used_model}, duration={duration}s)")
+        log_generation_model("video", used_model, "provider=vidu mode=t2v")
 
         resp = requests.post(submit_url, headers=self._headers(), json=body, timeout=30)
         if resp.status_code not in (200, 201):
@@ -210,6 +212,7 @@ class ViduModel(VideoGenModel):
 
         submit_url = f"{get_provider_base_url('VIDU')}/img2video"
         logger.info(f"[Vidu] Submitting i2v task (model={used_model}, duration={duration}s)")
+        log_generation_model("video", used_model, "provider=vidu mode=i2v")
 
         resp = requests.post(submit_url, headers=self._headers(), json=body, timeout=30)
         if resp.status_code not in (200, 201):

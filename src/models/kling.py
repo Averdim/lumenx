@@ -15,6 +15,7 @@ import requests
 
 from .base import VideoGenModel
 from ..utils.endpoints import get_provider_base_url
+from ..utils import log_generation_model
 from ..utils.oss_utils import OSSImageUploader
 from ..utils.provider_media import resolve_media_input
 
@@ -141,6 +142,11 @@ class KlingModel(VideoGenModel):
 
         # Submit task
         logger.info(f"[Kling] Submitting {'i2v' if is_i2v else 't2v'} task (model={model_name})")
+        log_generation_model(
+            "video",
+            str(model_name),
+            f"provider=kling mode={'i2v' if is_i2v else 't2v'}",
+        )
         response = requests.post(submit_url, headers=headers, json=body, timeout=30)
         response.raise_for_status()
         task_data = response.json()

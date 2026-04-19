@@ -10,7 +10,7 @@ import requests
 from http import HTTPStatus
 import dashscope
 from dashscope import ImageSynthesis
-from ..utils import get_logger
+from ..utils import get_logger, log_generation_model
 from ..utils.endpoints import get_provider_base_url
 from ..utils.media_refs import MEDIA_REF_UNKNOWN, classify_media_ref
 from ..utils.oss_utils import OSSImageUploader
@@ -22,6 +22,18 @@ logger = get_logger(__name__)
 # OpenAI-compatible image generation (e.g. Gemini Flash Image via third-party gateway).
 # T2I only; I2I is not supported in this integration.
 GEMINI_FLASH_IMAGE_PREVIEW_MODEL = "gemini-3.1-flash-image-preview"
+SEEDREAM_30_IMAGE_MODEL = "seedream3.0"
+# I2I upstream id on gateways that expect Doubao catalog names (UI still uses SEEDREAM_30_IMAGE_MODEL).
+SEEDREAM_30_I2I_UPSTREAM_MODEL = "doubao-seedream-3-0-t2i-250415"
+# Same code path: IMAGE_OPENAI_* chat/completions with modalities image+text.
+IMAGE_CHAT_OPENAI_COMPAT_MODELS = frozenset(
+    {GEMINI_FLASH_IMAGE_PREVIEW_MODEL, SEEDREAM_30_IMAGE_MODEL}
+)
+
+# OpenAI Images API: POST /v1/images/generations (T2I and I2I when gateway has no /images/edits).
+# I2I: same endpoint + JSON extra field for the first reference image (see IMAGE_GENERATIONS_REF_* env).
+Z_IMAGE_TURBO_MODEL = "z-image-turbo"
+IMAGE_GENERATIONS_OPENAI_COMPAT_MODELS = frozenset({Z_IMAGE_TURBO_MODEL})
 
 # Map Wan-style "WxH" to Gemini/OpenRouter-style aspect_ratio when using image_config.
 _WAN_SIZE_TO_ASPECT_RATIO: Dict[str, str] = {
@@ -143,11 +155,12 @@ class WanxImageModel(ImageGenModel):
         kwargs.pop('model_name', None)
         
         # Determine reference image limit based on model
-        ref_limit = (
-            4
-            if final_model_name in ("wan2.6-image", GEMINI_FLASH_IMAGE_PREVIEW_MODEL)
-            else 3
-        )
+        if final_model_name in IMAGE_GENERATIONS_OPENAI_COMPAT_MODELS and all_ref_paths:
+            ref_limit = 1
+        elif final_model_name in ("wan2.6-image", *IMAGE_CHAT_OPENAI_COMPAT_MODELS):
+            ref_limit = 4
+        else:
+            ref_limit = 3
         if len(all_ref_paths) > ref_limit:
             logger.warning(f"Limiting reference images from {len(all_ref_paths)} to {ref_limit} for model {final_model_name}")
             all_ref_paths = all_ref_paths[:ref_limit]
@@ -158,14 +171,28 @@ class WanxImageModel(ImageGenModel):
 
         try:
             api_start_time = time.time()
+            # OpenAI-compatible POST /v1/images/generations (T2I; I2I adds ref image in JSON if refs present)
+            if final_model_name in IMAGE_GENERATIONS_OPENAI_COMPAT_MODELS:
+                image_url = self._generate_openai_images_generations(
+                    prompt,
+                    size,
+                    negative_prompt,
+                    final_model_name,
+                    n,
+                    ref_image_paths=all_ref_paths if all_ref_paths else None,
+                )
             # OpenAI-compatible chat image (separate env from LLM / DashScope)
-            if final_model_name == GEMINI_FLASH_IMAGE_PREVIEW_MODEL:
+            elif final_model_name in IMAGE_CHAT_OPENAI_COMPAT_MODELS:
+                api_model_name = None
+                if final_model_name == SEEDREAM_30_IMAGE_MODEL and all_ref_paths:
+                    api_model_name = SEEDREAM_30_I2I_UPSTREAM_MODEL
                 image_url = self._generate_openai_compatible_chat_image(
                     prompt,
                     size,
                     negative_prompt,
                     final_model_name,
                     ref_image_paths=all_ref_paths if all_ref_paths else None,
+                    api_model_name=api_model_name,
                 )
             # Use HTTP API for wan2.6 models (SDK not supported yet)
             elif final_model_name == 'wan2.6-t2i':
@@ -199,6 +226,191 @@ class WanxImageModel(ImageGenModel):
 
     def _image_openai_api_key(self) -> Optional[str]:
         return os.getenv("IMAGE_OPENAI_API_KEY")
+
+    def _wan_size_to_openai_images_size(self, size: str) -> str:
+        """
+        Map Wan-style `WxH` (or `WxH` with x) to OpenAI Images API `1024x1024` / `1792x1024` / `1024x1792`.
+        Unknown sizes default to square.
+        """
+        if not size:
+            return "1024x1024"
+        s = size.strip().lower().replace("*", "x")
+        if s in ("1024x1024", "1792x1024", "1024x1792"):
+            return s
+        if "x" not in s:
+            return "1024x1024"
+        parts = s.split("x", 1)
+        try:
+            w, h = int(parts[0].strip()), int(parts[1].strip())
+        except (ValueError, IndexError):
+            return "1024x1024"
+        if w <= 0 or h <= 0:
+            return "1024x1024"
+        r = w / h
+        if r >= 1.25:
+            return "1792x1024"
+        if r <= 0.8:
+            return "1024x1792"
+        return "1024x1024"
+
+    def _openai_images_generations_response_to_image_url(self, data: Dict[str, Any]) -> str:
+        items = data.get("data")
+        if not isinstance(items, list) or not items:
+            raise RuntimeError(f"No image data in images/generations response: {data!r}")
+        first = items[0]
+        if not isinstance(first, dict):
+            raise RuntimeError(f"Unexpected images/generations data[0] type: {type(first)}")
+        url = first.get("url")
+        if isinstance(url, str) and url.strip():
+            return url.strip()
+        b64 = first.get("b64_json") or first.get("base64")
+        if isinstance(b64, str) and b64.strip():
+            return f"data:image/png;base64,{b64.strip()}"
+        raise RuntimeError(f"images/generations item has no url or b64_json: {first!r}")
+
+    def _generate_openai_images_generations(
+        self,
+        prompt: str,
+        size: str,
+        negative_prompt: Optional[str],
+        final_model_name: str,
+        n: int,
+        ref_image_paths: Optional[List[str]] = None,
+    ) -> str:
+        base_url = self._image_openai_base_url()
+        api_key = self._image_openai_api_key()
+        if not base_url or not api_key:
+            raise RuntimeError(
+                "OpenAI-compatible images/generations requires IMAGE_OPENAI_BASE_URL "
+                "(or KONGYANG_BASE_URL) and IMAGE_OPENAI_API_KEY."
+            )
+        full_prompt = (prompt or "").strip()
+        if negative_prompt and str(negative_prompt).strip():
+            full_prompt = f"{full_prompt}\n\nNegative prompt: {str(negative_prompt).strip()}"
+        openai_size = self._wan_size_to_openai_images_size(size)
+        try:
+            nn = int(n) if n is not None else 1
+        except (TypeError, ValueError):
+            nn = 1
+        nn = max(1, min(nn, 4))
+        body: Dict[str, Any] = {
+            "model": final_model_name,
+            "prompt": full_prompt,
+            "n": nn,
+            "size": openai_size,
+            "response_format": "url",
+        }
+        if ref_image_paths:
+            ref_field = (os.getenv("IMAGE_GENERATIONS_REF_IMAGE_FIELD") or "image").strip() or "image"
+            ref_mode = (os.getenv("IMAGE_GENERATIONS_REF_IMAGE_MODE") or "base64").strip().lower()
+            image_bytes, _fname, mime = self._load_reference_image_bytes_for_openai_post(
+                ref_image_paths[0], model_name=final_model_name
+            )
+            if ref_mode in ("url", "image_url"):
+                resolved = self._resolve_wan26_reference_image(
+                    ref_image_paths[0], model_name=final_model_name
+                )
+                if not resolved or not (
+                    resolved.startswith("http://") or resolved.startswith("https://")
+                ):
+                    raise RuntimeError(
+                        "IMAGE_GENERATIONS_REF_IMAGE_MODE=url requires the first reference "
+                        "to resolve to an http(s) URL (signed OSS URL, etc.)."
+                    )
+                url_field = (os.getenv("IMAGE_GENERATIONS_REF_IMAGE_URL_FIELD") or ref_field).strip() or ref_field
+                body[url_field] = resolved
+            elif ref_mode in ("data_uri", "data-url", "datauri"):
+                b64 = base64.b64encode(image_bytes).decode("ascii")
+                body[ref_field] = f"data:{mime};base64,{b64}"
+            else:
+                # default: raw base64 string (common on OpenAI-compatible JSON gateways)
+                body[ref_field] = base64.b64encode(image_bytes).decode("ascii")
+            logger.info(
+                "OpenAI images/generations I2I: attaching reference in JSON field %r (mode=%s)",
+                ref_field,
+                ref_mode,
+            )
+
+        post_url = base_url.rstrip("/") + "/images/generations"
+        log_suffix = " +1 ref" if ref_image_paths else ""
+        logger.info(
+            "Calling OpenAI-compatible images/generations (%s, size=%s%s)...",
+            final_model_name,
+            openai_size,
+            log_suffix,
+        )
+        log_generation_model("image", final_model_name, f"endpoint=images/generations size={openai_size}")
+        r = requests.post(
+            post_url,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=body,
+            timeout=300,
+        )
+        if not r.ok:
+            raise RuntimeError(f"images/generations HTTP {r.status_code}: {r.text[:800]}")
+        try:
+            payload = r.json()
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"images/generations returned non-JSON: {r.text[:500]}") from e
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"images/generations JSON must be an object, got {type(payload)}")
+        return self._openai_images_generations_response_to_image_url(payload)
+
+    def _load_reference_image_bytes_for_openai_post(
+        self, path: str, model_name: str
+    ) -> Tuple[bytes, str, str]:
+        """
+        Resolve a reference path to raw bytes for OpenAI-compatible image APIs.
+        Returns (image_bytes, filename, content_type).
+        """
+        resolved = self._resolve_wan26_reference_image(path, model_name=model_name)
+        if not resolved:
+            raise RuntimeError(f"Could not resolve reference image for OpenAI images API: {path}")
+
+        if resolved.startswith("data:"):
+            try:
+                header, b64_part = resolved.split(",", 1)
+            except ValueError as e:
+                raise RuntimeError(f"Malformed data URI for reference image: {path}") from e
+            mime = "image/png"
+            if header.startswith("data:") and ";" in header[5:]:
+                mime_candidate = header[5:].split(";", 1)[0].strip()
+                if mime_candidate:
+                    mime = mime_candidate
+            try:
+                raw = base64.b64decode(b64_part, validate=False)
+            except Exception as e:
+                raise RuntimeError(f"Invalid base64 in data URI for reference image: {path}") from e
+            ext = mimetypes.guess_extension(mime) or ".png"
+            return raw, f"reference{ext}", mime
+
+        if resolved.startswith("http://") or resolved.startswith("https://"):
+            r = requests.get(resolved, timeout=120)
+            if not r.ok:
+                raise RuntimeError(
+                    f"Failed to download reference image ({r.status_code}): {resolved[:120]}..."
+                )
+            ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip() or "image/png"
+            ext = mimetypes.guess_extension(ctype) or ".png"
+            return r.content, f"reference{ext}", ctype
+
+        if os.path.isfile(resolved):
+            mime, _ = mimetypes.guess_type(resolved)
+            mime = mime or "image/png"
+            ext = mimetypes.guess_extension(mime) or os.path.splitext(resolved)[1] or ".png"
+            with open(resolved, "rb") as f:
+                return f.read(), os.path.basename(resolved) or f"reference{ext}", mime
+
+        if os.path.isfile(path):
+            mime, _ = mimetypes.guess_type(path)
+            mime = mime or "image/png"
+            with open(path, "rb") as f:
+                return f.read(), os.path.basename(path) or "reference.png", mime
+
+        raise RuntimeError(
+            f"Reference image is not a downloadable URL, data URI, or local file: {path!r} "
+            f"(resolved={resolved!r})"
+        )
 
     def _wan_size_to_gemini_image_config(self, size: str) -> Optional[Dict[str, Any]]:
         """Map Wan `WxH` size string to gateway image_config (aspect_ratio), if known."""
@@ -239,13 +451,19 @@ class WanxImageModel(ImageGenModel):
         negative_prompt: Optional[str],
         final_model_name: str,
         ref_image_paths: Optional[List[str]] = None,
+        *,
+        api_model_name: Optional[str] = None,
     ) -> str:
         """
         Text-to-image or image-to-image via OpenAI-compatible POST /chat/completions.
         Expects IMAGE_OPENAI_BASE_URL (or KONGYANG_BASE_URL) and IMAGE_OPENAI_API_KEY.
         With ref_image_paths, sends multimodal user content (image_url parts + text).
         Returns an http(s) URL or a data: URI for _download_image / _write_data_uri_to_path.
+
+        final_model_name: logical/UI model id (routing, ref resolution).
+        api_model_name: if set, sent as `model` to the API (e.g. Seedream I2I upstream id).
         """
+        api_model = (api_model_name or final_model_name).strip()
         base_url = self._image_openai_base_url()
         api_key = self._image_openai_api_key()
         if not base_url or not api_key:
@@ -296,13 +514,18 @@ class WanxImageModel(ImageGenModel):
             logger.info("Calling OpenAI-compatible chat completions for image generation...")
 
         payload = {
-            "model": final_model_name,
+            "model": api_model,
             "messages": messages,
             **extra_body,
         }
+        log_generation_model(
+            "image",
+            api_model,
+            f"endpoint=chat/completions mode={'i2i' if ref_image_paths else 't2i'} routed_as={final_model_name}",
+        )
         try:
             response = client.chat.completions.create(
-                model=final_model_name,
+                model=api_model,
                 messages=messages,
                 extra_body=extra_body,
             )
@@ -432,7 +655,7 @@ class WanxImageModel(ImageGenModel):
         
         logger.info(f"Calling Wan 2.6 T2I HTTP API...")
         logger.info(f"Payload: {payload}")
-        
+        log_generation_model("image", "wan2.6-t2i", "endpoint=dashscope multimodal-generation")
         response = requests.post(url, headers=headers, json=payload, timeout=300)  # 5 minutes for slow API responses
         
         logger.info(f"Response status: {response.status_code}")
@@ -520,7 +743,7 @@ class WanxImageModel(ImageGenModel):
         
         logger.info(f"Calling Wan 2.6 Image HTTP API (async)...")
         logger.info(f"Payload: {payload}")
-        
+        log_generation_model("image", "wan2.6-image", "endpoint=dashscope image-generation async")
         # Step 1: Create task
         response = requests.post(create_url, headers=headers, json=payload, timeout=120)  # 2 minutes for task creation
         
@@ -721,6 +944,7 @@ class WanxImageModel(ImageGenModel):
             call_args['images'] = ref_image_urls
 
         # Call Dashscope SDK
+        log_generation_model("image", model_name, "endpoint=dashscope ImageSynthesis SDK")
         rsp = ImageSynthesis.call(**call_args)
         
         logger.info(f"SDK response: {rsp}")

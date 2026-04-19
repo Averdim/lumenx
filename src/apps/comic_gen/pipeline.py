@@ -3238,7 +3238,7 @@ class ComicGenPipeline:
         return None
 
     def get_effective_llm_backend(self, episode: Script, series: Optional[Series] = None) -> Optional[str]:
-        """Return 'dashscope' | 'openai' if forced; None = auto (model-prefix registry + LLM_PROVIDER fallback)."""
+        """Return forced backend or None = auto. Legacy llm_backend=openai maps to openai_kongyang."""
         for ms in (
             episode.model_settings if episode.model_settings else None,
             series.model_settings if series and series.model_settings else None,
@@ -3246,6 +3246,8 @@ class ComicGenPipeline:
             if not ms:
                 continue
             raw = (ms.llm_backend or "").strip().lower()
-            if raw in ("dashscope", "openai"):
+            if raw == "openai":
+                raw = "openai_kongyang"
+            if raw in ("dashscope", "openai_kongyang", "openai_geeknow"):
                 return raw
         return None

@@ -70,3 +70,11 @@ def get_logger(name):
     """Returns a logger with the specified name."""
     return logging.getLogger(name)
 
+
+def log_generation_model(kind: str, model: str, extra: str = "") -> None:
+    """Print one line to stdout so the active model is visible in the terminal (e.g. uvicorn)."""
+    if extra:
+        print(f"[LumenX:{kind}] invoking model={model} | {extra}", flush=True)
+    else:
+        print(f"[LumenX:{kind}] invoking model={model}", flush=True)
+

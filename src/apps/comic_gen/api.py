@@ -442,7 +442,7 @@ class UpdateModelSettingsRequest(BaseModel):
     prop_aspect_ratio: Optional[str] = None
     storyboard_aspect_ratio: Optional[str] = None
     llm_model: Optional[str] = None
-    llm_backend: Optional[str] = None  # auto | dashscope | openai
+    llm_backend: Optional[str] = None  # auto | dashscope | openai_kongyang | openai_geeknow (legacy openai→kongyang)
 
 @app.get("/series/{series_id}/model_settings")
 async def get_series_model_settings(series_id: str):

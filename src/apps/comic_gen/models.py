@@ -270,7 +270,10 @@ class ModelSettings(BaseModel):
     )
     llm_backend: str = Field(
         "auto",
-        description="LLM channel: auto (model-prefix registry), dashscope, or openai (OPENAI_BASE_URL + OPENAI_API_KEY)",
+        description=(
+            "LLM channel: auto, dashscope, openai_kongyang (空氧 OPENAI_KONGYANG_*; legacy OPENAI_* ok), "
+            "or openai_geeknow (OPENAI_GEEKNOW_*). Legacy value 'openai' is treated as openai_kongyang."
+        ),
     )
     character_aspect_ratio: str = Field("9:16", description="Aspect ratio for Characters (9:16, 16:9, 1:1)")
     scene_aspect_ratio: str = Field("16:9", description="Aspect ratio for Scenes (9:16, 16:9, 1:1)")

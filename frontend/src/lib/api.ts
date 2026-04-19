@@ -368,7 +368,7 @@ export const api = {
         propAspectRatio?: string,
         storyboardAspectRatio?: string,
         llmModel?: string,
-        llmBackend?: "auto" | "dashscope" | "openai"
+        llmBackend?: "auto" | "dashscope" | "openai_kongyang" | "openai_geeknow"
     ) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/model_settings`, {
             t2i_model: t2iModel,
@@ -710,6 +710,7 @@ export const api = {
         prop_aspect_ratio?: string;
         storyboard_aspect_ratio?: string;
         llm_model?: string;
+        llm_backend?: "auto" | "dashscope" | "openai_kongyang" | "openai_geeknow";
     }) => {
         const response = await axios.put(`${API_URL}/series/${seriesId}/model_settings`, settings);
         return response.data;

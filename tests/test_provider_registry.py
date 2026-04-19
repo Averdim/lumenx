@@ -16,6 +16,15 @@ class TestProviderRegistryRouting:
         assert registry.resolve_backend("gemini-3.1-flash-image-preview") == "openai"
         assert registry.get_family_config("gemini-3.1-flash-image-preview").backend_default == "openai"
 
+    def test_seedream30_image_routes_to_openai(self):
+        registry = get_default_provider_registry()
+        assert registry.resolve_backend("seedream3.0") == "openai"
+
+    def test_z_image_turbo_routes_to_openai(self):
+        registry = get_default_provider_registry()
+        assert registry.resolve_backend("z-image-turbo") == "openai"
+        assert registry.get_family_config("z-image-turbo").supported_modalities == ("t2i", "i2i")
+
     def test_kling_defaults_to_dashscope_when_mode_is_unset(self):
         registry = get_default_provider_registry()
 

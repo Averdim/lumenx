@@ -312,12 +312,20 @@ function FrameWorkbenchRow({
                                             onClick={onOpenEditor}
                                         />
                                     ) : (
-                                        <div className="flex h-full w-full items-center justify-center text-gray-600">
+                                        <button
+                                            type="button"
+                                            title="打开首帧编辑器，或使用右下角 ×1 / ×2 直接生成"
+                                            onClick={onOpenEditor}
+                                            className="flex h-full w-full flex-col items-center justify-center gap-1 text-gray-600 transition-colors hover:bg-white/5 hover:text-gray-400"
+                                        >
                                             <ImageIcon size={20} className="opacity-30" />
-                                        </div>
+                                            <span className="px-1 text-center text-[9px] leading-tight text-gray-500">
+                                                点击生成
+                                            </span>
+                                        </button>
                                     )}
-                                    {!frame.locked && primaryDisplay ? (
-                                        <div className="absolute bottom-1 right-1 flex gap-0.5">
+                                    {!frame.locked ? (
+                                        <div className="absolute bottom-1 right-1 z-[1] flex gap-0.5">
                                             {[1, 2].map((size) => (
                                                 <button
                                                     key={size}
@@ -327,7 +335,8 @@ function FrameWorkbenchRow({
                                                         onRender(size);
                                                     }}
                                                     disabled={rendering}
-                                                    className="rounded bg-primary/90 px-1.5 py-0.5 text-[10px] text-white"
+                                                    className="rounded bg-primary/90 px-1.5 py-0.5 text-[10px] text-white disabled:opacity-50"
+                                                    title={`生成 ${size} 张首帧`}
                                                 >
                                                     ×{size}
                                                 </button>

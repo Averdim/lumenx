@@ -38,3 +38,6 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+markers = [
+    "live_recent_models: hits real gateways; requires RUN_LIVE_NEW_MODELS=1 and credentials in .env",
+]

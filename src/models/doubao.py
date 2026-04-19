@@ -15,6 +15,7 @@ from ..utils.media_refs import (
     resolve_local_media_path,
 )
 from ..utils.oss_utils import OSSImageUploader
+from ..utils import log_generation_model
 
 # Try to import Ark, handle if not installed (though user said they installed it)
 try:
@@ -248,6 +249,7 @@ class DoubaoModel(VideoGenModel):
                         block["role"] = role
                     content.append(block)
 
+                log_generation_model("video", model_id, "provider=doubao-ark seedance2")
                 create_result = self.client.content_generation.tasks.create(
                     model=model_id,
                     content=content,
@@ -269,6 +271,7 @@ class DoubaoModel(VideoGenModel):
                     raise ValueError(
                         "Doubao SeeDance requires an input image (img_url or img_path)."
                     )
+                log_generation_model("video", model_id, "provider=doubao-ark legacy-i2v")
                 create_result = self.client.content_generation.tasks.create(
                     model=model_id,
                     content=[
