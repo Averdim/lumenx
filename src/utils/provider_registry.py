@@ -164,6 +164,17 @@ DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
         },
     ),
     ProviderFamilyConfig(
+        model_family="doubao-seedream",
+        backend_default="openai",
+        credential_sources={
+            "openai": ("IMAGE_OPENAI_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2i"),
+        image_input_mode={
+            "openai": "openai_compatible_image_url",
+        },
+    ),
+    ProviderFamilyConfig(
         model_family="seedream",
         backend_default="openai",
         credential_sources={

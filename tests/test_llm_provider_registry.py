@@ -37,9 +37,9 @@ def test_strip_llm_gateway_route_suffix():
 def test_resolve_gemini_to_kongyang(monkeypatch):
     """gemini* prefix matches before LLM_PROVIDER fallback."""
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
-    assert resolve_llm_backend("gemini2.5-flash") == "openai_kongyang"
+    assert resolve_llm_backend("gemini-2.5-flash") == "openai_kongyang"
     monkeypatch.setenv("LLM_PROVIDER", "dashscope")
-    assert resolve_llm_backend("gemini2.5-flash") == "openai_kongyang"
+    assert resolve_llm_backend("gemini-2.5-flash") == "openai_kongyang"
 
 
 def test_resolve_unknown_fallback_to_legacy_llm_provider(monkeypatch):

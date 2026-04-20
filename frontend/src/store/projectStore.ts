@@ -151,7 +151,7 @@ export const LLM_MODELS = [
     { id: 'qwen-max', name: 'Qwen Max', description: 'DashScope' },
     { id: 'gpt-5.2-kongyang', name: 'GPT-5.2（空氧）', description: '模型 id 带 -kongyang；请求上游自动为 gpt-5.2' },
     { id: 'gpt-5-2-geeknow', name: 'GPT-5.2（GeekNow）', description: '模型 id 带 -geeknow；请求上游自动为 gpt-5-2' },
-    { id: 'gemini2.5-flash', name: 'Gemini 2.5 Flash', description: 'Auto：gemini* → 空氧（OPENAI_KONGYANG_* 或 OPENAI_*）' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Auto：gemini* → 空氧（OPENAI_KONGYANG_* 或 OPENAI_*）' },
     {
         id: 'gemini-3-flash-preview',
         name: 'Gemini 3 Flash (preview)',
@@ -173,7 +173,7 @@ export const T2I_MODELS = [
         description: 'T2I via OpenAI-compatible gateway (IMAGE_OPENAI_* env)',
     },
     {
-        id: 'seedream3.0',
+        id: 'doubao-seedream-3-0-t2i-250415',
         name: 'Seedream 3.0',
         description: 'T2I 与 Gemini Flash Image 相同通路（IMAGE_OPENAI_*）',
     },
@@ -196,7 +196,7 @@ export const I2I_MODELS = [
         description: 'I2I via OpenAI-compatible gateway (IMAGE_OPENAI_* env)',
     },
     {
-        id: 'seedream3.0',
+        id: 'doubao-seedream-3-0-t2i-250415',
         name: 'Seedream 3.0',
         description: 'I2I 与 Gemini Flash Image 相同通路（IMAGE_OPENAI_*）',
     },

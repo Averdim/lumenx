@@ -22,18 +22,19 @@ logger = get_logger(__name__)
 # OpenAI-compatible image generation (e.g. Gemini Flash Image via third-party gateway).
 # T2I only; I2I is not supported in this integration.
 GEMINI_FLASH_IMAGE_PREVIEW_MODEL = "gemini-3.1-flash-image-preview"
-SEEDREAM_30_IMAGE_MODEL = "seedream3.0"
-# I2I upstream id on gateways that expect Doubao catalog names (UI still uses SEEDREAM_30_IMAGE_MODEL).
+# Primary Seedream model id used by UI and API requests.
+SEEDREAM_30_IMAGE_MODEL = "doubao-seedream-3-0-t2i-250415"
+# Kept for compatibility with older code paths; currently same as SEEDREAM_30_IMAGE_MODEL.
 SEEDREAM_30_I2I_UPSTREAM_MODEL = "doubao-seedream-3-0-t2i-250415"
-# Same code path: IMAGE_OPENAI_* chat/completions with modalities image+text.
+# chat/completions path (Gemini only for now).
 IMAGE_CHAT_OPENAI_COMPAT_MODELS = frozenset(
-    {GEMINI_FLASH_IMAGE_PREVIEW_MODEL, SEEDREAM_30_IMAGE_MODEL}
+    {GEMINI_FLASH_IMAGE_PREVIEW_MODEL}
 )
 
 # OpenAI Images API: POST /v1/images/generations (T2I and I2I when gateway has no /images/edits).
 # I2I: same endpoint + JSON extra field for the first reference image (see IMAGE_GENERATIONS_REF_* env).
 Z_IMAGE_TURBO_MODEL = "z-image-turbo"
-IMAGE_GENERATIONS_OPENAI_COMPAT_MODELS = frozenset({Z_IMAGE_TURBO_MODEL})
+IMAGE_GENERATIONS_OPENAI_COMPAT_MODELS = frozenset({Z_IMAGE_TURBO_MODEL, SEEDREAM_30_IMAGE_MODEL})
 
 # Map Wan-style "WxH" to Gemini/OpenRouter-style aspect_ratio when using image_config.
 _WAN_SIZE_TO_ASPECT_RATIO: Dict[str, str] = {
@@ -173,6 +174,9 @@ class WanxImageModel(ImageGenModel):
             api_start_time = time.time()
             # OpenAI-compatible POST /v1/images/generations (T2I; I2I adds ref image in JSON if refs present)
             if final_model_name in IMAGE_GENERATIONS_OPENAI_COMPAT_MODELS:
+                api_model_name = None
+                if final_model_name == SEEDREAM_30_IMAGE_MODEL and all_ref_paths:
+                    api_model_name = SEEDREAM_30_I2I_UPSTREAM_MODEL
                 image_url = self._generate_openai_images_generations(
                     prompt,
                     size,
@@ -180,6 +184,7 @@ class WanxImageModel(ImageGenModel):
                     final_model_name,
                     n,
                     ref_image_paths=all_ref_paths if all_ref_paths else None,
+                    api_model_name=api_model_name,
                 )
             # OpenAI-compatible chat image (separate env from LLM / DashScope)
             elif final_model_name in IMAGE_CHAT_OPENAI_COMPAT_MODELS:
@@ -276,6 +281,8 @@ class WanxImageModel(ImageGenModel):
         final_model_name: str,
         n: int,
         ref_image_paths: Optional[List[str]] = None,
+        *,
+        api_model_name: Optional[str] = None,
     ) -> str:
         base_url = self._image_openai_base_url()
         api_key = self._image_openai_api_key()
@@ -293,8 +300,9 @@ class WanxImageModel(ImageGenModel):
         except (TypeError, ValueError):
             nn = 1
         nn = max(1, min(nn, 4))
+        api_model = (api_model_name or final_model_name).strip()
         body: Dict[str, Any] = {
-            "model": final_model_name,
+            "model": api_model,
             "prompt": full_prompt,
             "n": nn,
             "size": openai_size,
@@ -334,12 +342,17 @@ class WanxImageModel(ImageGenModel):
         post_url = base_url.rstrip("/") + "/images/generations"
         log_suffix = " +1 ref" if ref_image_paths else ""
         logger.info(
-            "Calling OpenAI-compatible images/generations (%s, size=%s%s)...",
+            "Calling OpenAI-compatible images/generations (%s -> %s, size=%s%s)...",
             final_model_name,
+            api_model,
             openai_size,
             log_suffix,
         )
-        log_generation_model("image", final_model_name, f"endpoint=images/generations size={openai_size}")
+        log_generation_model(
+            "image",
+            final_model_name,
+            f"endpoint=images/generations size={openai_size} routed_as={api_model}",
+        )
         r = requests.post(
             post_url,
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},

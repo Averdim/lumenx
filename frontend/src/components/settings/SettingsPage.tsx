@@ -24,6 +24,9 @@ type EnvConfig = EnvConfigPayload & {
   ARK_API_KEY: string;
   OPENAI_KONGYANG_API_KEY: string;
   OPENAI_GEEKNOW_API_KEY: string;
+  IMAGE_OPENAI_API_KEY: string;
+  IMAGE_OPENAI_BASE_URL: string;
+  KONGYANG_BASE_URL: string;
   endpoint_overrides: Record<string, string>;
 };
 
@@ -53,6 +56,9 @@ const DEFAULT_CONFIG: EnvConfig = {
   ARK_API_KEY: "",
   OPENAI_KONGYANG_API_KEY: "",
   OPENAI_GEEKNOW_API_KEY: "",
+  IMAGE_OPENAI_API_KEY: "",
+  IMAGE_OPENAI_BASE_URL: "",
+  KONGYANG_BASE_URL: "",
   endpoint_overrides: {},
 };
 
@@ -264,6 +270,45 @@ export default function SettingsPage() {
                     value={config.OPENAI_GEEKNOW_API_KEY}
                     onChange={(e) => handleChange("OPENAI_GEEKNOW_API_KEY", e.target.value)}
                     placeholder="可选，使用 GeekNow LLM 通道时填写"
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-white/10">
+              <h3 className="text-sm font-bold text-white mb-2">Image OpenAI（生图，可选）</h3>
+              <p className="text-[10px] text-gray-500 mb-4">
+                OpenAI 兼容生图通道（Gemini Flash Image / Seedream / z-image-turbo）。与 LLM 通道分开配置，避免串线。
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">生图 API Key（IMAGE_OPENAI_API_KEY）</label>
+                  <input
+                    type="password"
+                    value={config.IMAGE_OPENAI_API_KEY}
+                    onChange={(e) => handleChange("IMAGE_OPENAI_API_KEY", e.target.value)}
+                    placeholder="可选，OpenAI 兼容生图接口 Key"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">生图 Base URL（IMAGE_OPENAI_BASE_URL）</label>
+                  <input
+                    type="text"
+                    value={config.IMAGE_OPENAI_BASE_URL}
+                    onChange={(e) => handleChange("IMAGE_OPENAI_BASE_URL", e.target.value)}
+                    placeholder="https://your-image-gateway.example/v1"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">生图 Base URL 兼容别名（KONGYANG_BASE_URL）</label>
+                  <input
+                    type="text"
+                    value={config.KONGYANG_BASE_URL}
+                    onChange={(e) => handleChange("KONGYANG_BASE_URL", e.target.value)}
+                    placeholder="当 IMAGE_OPENAI_BASE_URL 为空时使用"
                     className={inputClass}
                   />
                 </div>

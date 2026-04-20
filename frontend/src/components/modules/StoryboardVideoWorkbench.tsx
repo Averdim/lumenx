@@ -624,6 +624,32 @@ type RowVideoParams = {
     seedanceI2vMode: SeedanceI2vMode;
 };
 
+const ROW_VIDEO_PARAMS_STORAGE_KEY = "lumenx_storyboard_row_video_params_v1";
+
+function loadPersistedRowVideoParams(projectId: string): Record<string, RowVideoParams> {
+    if (typeof window === "undefined") return {};
+    try {
+        const raw = window.localStorage.getItem(ROW_VIDEO_PARAMS_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw) as Record<string, Record<string, RowVideoParams>>;
+        return parsed?.[projectId] || {};
+    } catch {
+        return {};
+    }
+}
+
+function persistRowVideoParams(projectId: string, frameParams: Record<string, RowVideoParams>) {
+    if (typeof window === "undefined") return;
+    try {
+        const raw = window.localStorage.getItem(ROW_VIDEO_PARAMS_STORAGE_KEY);
+        const parsed = raw ? (JSON.parse(raw) as Record<string, Record<string, RowVideoParams>>) : {};
+        parsed[projectId] = frameParams;
+        window.localStorage.setItem(ROW_VIDEO_PARAMS_STORAGE_KEY, JSON.stringify(parsed));
+    } catch {
+        // Ignore localStorage failures (private mode/quota) and keep in-memory behavior.
+    }
+}
+
 function createDefaultRowVideoParams(model: string): RowVideoParams {
     return {
         model,
@@ -724,14 +750,20 @@ export default function StoryboardVideoWorkbench() {
         if (!currentProject) return;
         const projectModel = currentProject.model_settings?.i2v_model || "wan2.5-i2v-preview";
         const frameIds = (currentProject.frames || []).map((f: any) => f.id);
+        const persisted = loadPersistedRowVideoParams(currentProject.id);
         setRowVideoParamsByFrameId((prev) => {
             const next: Record<string, RowVideoParams> = {};
             for (const id of frameIds) {
-                next[id] = prev[id] ?? createDefaultRowVideoParams(projectModel);
+                next[id] = prev[id] ?? persisted[id] ?? createDefaultRowVideoParams(projectModel);
             }
             return next;
         });
     }, [currentProject?.id, frameIdKey, currentProject?.model_settings?.i2v_model]);
+
+    useEffect(() => {
+        if (!currentProject?.id) return;
+        persistRowVideoParams(currentProject.id, rowVideoParamsByFrameId);
+    }, [currentProject?.id, rowVideoParamsByFrameId]);
     const tasks = currentProject?.video_tasks || [];
 
     const r2vQueueTasks = useMemo(

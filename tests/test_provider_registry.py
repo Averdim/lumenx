@@ -18,7 +18,7 @@ class TestProviderRegistryRouting:
 
     def test_seedream30_image_routes_to_openai(self):
         registry = get_default_provider_registry()
-        assert registry.resolve_backend("seedream3.0") == "openai"
+        assert registry.resolve_backend("doubao-seedream-3-0-t2i-250415") == "openai"
 
     def test_z_image_turbo_routes_to_openai(self):
         registry = get_default_provider_registry()

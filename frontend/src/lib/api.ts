@@ -50,6 +50,12 @@ export interface EnvConfigPayload {
     OPENAI_KONGYANG_API_KEY?: string;
     /** OpenAI-compatible LLM (GeekNow); project llm_backend openai_geeknow */
     OPENAI_GEEKNOW_API_KEY?: string;
+    /** OpenAI-compatible image generation key (separate from LLM keys). */
+    IMAGE_OPENAI_API_KEY?: string;
+    /** OpenAI-compatible image generation base URL. */
+    IMAGE_OPENAI_BASE_URL?: string;
+    /** Backward-compatible alias for image generation base URL. */
+    KONGYANG_BASE_URL?: string;
     endpoint_overrides?: Record<string, string>;
     [key: string]: string | Record<string, string> | undefined;
 }

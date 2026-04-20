@@ -671,6 +671,9 @@ class EnvConfig(ProviderRoutingConfig):
     ARK_API_KEY: Optional[str] = None
     OPENAI_KONGYANG_API_KEY: Optional[str] = None
     OPENAI_GEEKNOW_API_KEY: Optional[str] = None
+    IMAGE_OPENAI_API_KEY: Optional[str] = None
+    IMAGE_OPENAI_BASE_URL: Optional[str] = None
+    KONGYANG_BASE_URL: Optional[str] = None
     endpoint_overrides: Dict[str, str] = Field(default_factory=dict)
 
 
@@ -2129,6 +2132,9 @@ async def get_env_config():
             "ARK_API_KEY": os.getenv("ARK_API_KEY", ""),
             "OPENAI_KONGYANG_API_KEY": os.getenv("OPENAI_KONGYANG_API_KEY", ""),
             "OPENAI_GEEKNOW_API_KEY": os.getenv("OPENAI_GEEKNOW_API_KEY", ""),
+            "IMAGE_OPENAI_API_KEY": os.getenv("IMAGE_OPENAI_API_KEY", ""),
+            "IMAGE_OPENAI_BASE_URL": os.getenv("IMAGE_OPENAI_BASE_URL", ""),
+            "KONGYANG_BASE_URL": os.getenv("KONGYANG_BASE_URL", ""),
             "KLING_PROVIDER_MODE": _normalize_provider_mode(os.getenv("KLING_PROVIDER_MODE")),
             "VIDU_PROVIDER_MODE": _normalize_provider_mode(os.getenv("VIDU_PROVIDER_MODE")),
             "PIXVERSE_PROVIDER_MODE": _normalize_provider_mode(os.getenv("PIXVERSE_PROVIDER_MODE")),
