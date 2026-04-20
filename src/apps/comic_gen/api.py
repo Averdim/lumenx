@@ -669,6 +669,8 @@ class EnvConfig(ProviderRoutingConfig):
     KLING_SECRET_KEY: Optional[str] = None
     VIDU_API_KEY: Optional[str] = None
     ARK_API_KEY: Optional[str] = None
+    OPENAI_KONGYANG_API_KEY: Optional[str] = None
+    OPENAI_GEEKNOW_API_KEY: Optional[str] = None
     endpoint_overrides: Dict[str, str] = Field(default_factory=dict)
 
 
@@ -2125,6 +2127,8 @@ async def get_env_config():
             "KLING_SECRET_KEY": os.getenv("KLING_SECRET_KEY", ""),
             "VIDU_API_KEY": os.getenv("VIDU_API_KEY", ""),
             "ARK_API_KEY": os.getenv("ARK_API_KEY", ""),
+            "OPENAI_KONGYANG_API_KEY": os.getenv("OPENAI_KONGYANG_API_KEY", ""),
+            "OPENAI_GEEKNOW_API_KEY": os.getenv("OPENAI_GEEKNOW_API_KEY", ""),
             "KLING_PROVIDER_MODE": _normalize_provider_mode(os.getenv("KLING_PROVIDER_MODE")),
             "VIDU_PROVIDER_MODE": _normalize_provider_mode(os.getenv("VIDU_PROVIDER_MODE")),
             "PIXVERSE_PROVIDER_MODE": _normalize_provider_mode(os.getenv("PIXVERSE_PROVIDER_MODE")),

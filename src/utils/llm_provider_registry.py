@@ -2,7 +2,7 @@
 Text/chat LLM routing: model id prefix → backend (dashscope vs openai-compatible).
 
 Registry takes precedence over legacy LLM_PROVIDER when prefix matches.
-gemini* → openai_kongyang (空氧). gpt-5.2-kongyang / gpt-5.2-geeknow → 对应网关（见 strip_llm_gateway_route_suffix）。
+gemini* → openai_kongyang (空氧). gpt-5.2-kongyang / gpt-5-2-geeknow → 对应网关（见 strip_llm_gateway_route_suffix）。
 Unmatched model ids fall back to LLM_PROVIDER then dashscope.
 
 See .env.example: text OpenAI-compatible uses openai_kongyang (OPENAI_KONGYANG_*; legacy OPENAI_* fallback)
@@ -19,12 +19,12 @@ from .provider_registry import ProviderFamilyConfig, ProviderRegistry
 # Forced llm_backend values (bypass prefix registry). Generic "openai" removed — use openai_kongyang / openai_geeknow.
 LLM_BACKEND_OVERRIDE_VALUES = frozenset({"dashscope", "openai_kongyang", "openai_geeknow"})
 
-# Suffixes on model id for UI routing only; stripped before chat.completions (upstream expects e.g. gpt-5.2).
+# Suffixes on model id for UI routing only; stripped before chat.completions (upstream e.g. gpt-5.2 空氧 / gpt-5-2 GeekNow).
 _LLM_GATEWAY_ROUTE_SUFFIXES: Tuple[str, ...] = ("-kongyang", "-geeknow")
 
 
 def strip_llm_gateway_route_suffix(model_id: str) -> str:
-    """Remove routing-only suffix so gateways receive the catalog model name (e.g. gpt-5.2)."""
+    """Remove routing-only suffix so gateways receive the catalog model name (e.g. gpt-5.2 or gpt-5-2)."""
     s = (model_id or "").strip()
     low = s.lower()
     for suf in _LLM_GATEWAY_ROUTE_SUFFIXES:
@@ -36,7 +36,7 @@ def strip_llm_gateway_route_suffix(model_id: str) -> str:
 DEFAULT_LLM_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
     # Longer prefixes first (same length order is stable for dict iteration; register distinct lengths).
     ProviderFamilyConfig(
-        model_family="gpt-5.2-geeknow",
+        model_family="gpt-5-2-geeknow",
         backend_default="openai_geeknow",
         credential_sources={
             "openai_geeknow": ("OPENAI_GEEKNOW_API_KEY",),

@@ -25,6 +25,8 @@ interface EnvConfig {
   KLING_SECRET_KEY: string;
   VIDU_API_KEY: string;
   ARK_API_KEY: string;
+  OPENAI_KONGYANG_API_KEY: string;
+  OPENAI_GEEKNOW_API_KEY: string;
   endpoint_overrides: Record<string, string>;
   [key: string]: string | Record<string, string>;
 }
@@ -33,6 +35,8 @@ const ENDPOINT_PROVIDERS = [
   { key: "DASHSCOPE_BASE_URL", label: "DashScope", placeholder: "https://dashscope.aliyuncs.com" },
   { key: "KLING_BASE_URL", label: "Kling", placeholder: "https://api-beijing.klingai.com/v1" },
   { key: "VIDU_BASE_URL", label: "Vidu", placeholder: "https://api.vidu.cn/ent/v2" },
+  { key: "OPENAI_KONGYANG_BASE_URL", label: "空氧 (LLM)", placeholder: "https://your-kongyang.example/v1" },
+  { key: "OPENAI_GEEKNOW_BASE_URL", label: "GeekNow (LLM)", placeholder: "https://your-geeknow.example/v1" },
 ];
 
 const DEFAULT_CONFIG: EnvConfig = {
@@ -51,6 +55,8 @@ const DEFAULT_CONFIG: EnvConfig = {
   KLING_SECRET_KEY: "",
   VIDU_API_KEY: "",
   ARK_API_KEY: "",
+  OPENAI_KONGYANG_API_KEY: "",
+  OPENAI_GEEKNOW_API_KEY: "",
   endpoint_overrides: {},
 };
 
@@ -132,9 +138,9 @@ describe("ENDPOINT_PROVIDERS registry", () => {
     }
   });
 
-  it("follows {PROVIDER}_BASE_URL naming convention", () => {
+  it("follows * _BASE_URL naming convention", () => {
     for (const provider of ENDPOINT_PROVIDERS) {
-      expect(provider.key).toMatch(/^[A-Z]+_BASE_URL$/);
+      expect(provider.key).toMatch(/^[A-Z][A-Z0-9_]*_BASE_URL$/);
     }
   });
 
@@ -143,10 +149,12 @@ describe("ENDPOINT_PROVIDERS registry", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("contains exactly DashScope, Kling, Vidu", () => {
-    expect(ENDPOINT_PROVIDERS).toHaveLength(3);
+  it("contains DashScope, Kling, Vidu, 空氧, GeekNow", () => {
+    expect(ENDPOINT_PROVIDERS).toHaveLength(5);
     const labels = ENDPOINT_PROVIDERS.map((p) => p.label);
-    expect(labels).toEqual(expect.arrayContaining(["DashScope", "Kling", "Vidu"]));
+    expect(labels).toEqual(
+      expect.arrayContaining(["DashScope", "Kling", "Vidu", "空氧 (LLM)", "GeekNow (LLM)"])
+    );
   });
 });
 

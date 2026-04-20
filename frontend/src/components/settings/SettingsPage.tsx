@@ -22,6 +22,8 @@ type EnvConfig = EnvConfigPayload & {
   KLING_SECRET_KEY: string;
   VIDU_API_KEY: string;
   ARK_API_KEY: string;
+  OPENAI_KONGYANG_API_KEY: string;
+  OPENAI_GEEKNOW_API_KEY: string;
   endpoint_overrides: Record<string, string>;
 };
 
@@ -29,6 +31,8 @@ const ENDPOINT_PROVIDERS = [
   { key: "DASHSCOPE_BASE_URL", label: "DashScope", placeholder: "https://dashscope.aliyuncs.com" },
   { key: "KLING_BASE_URL", label: "Kling", placeholder: "https://api-beijing.klingai.com/v1" },
   { key: "VIDU_BASE_URL", label: "Vidu", placeholder: "https://api.vidu.cn/ent/v2" },
+  { key: "OPENAI_KONGYANG_BASE_URL", label: "空氧 (LLM)", placeholder: "https://your-kongyang.example/v1" },
+  { key: "OPENAI_GEEKNOW_BASE_URL", label: "GeekNow (LLM)", placeholder: "https://your-geeknow.example/v1" },
 ];
 
 const DEFAULT_CONFIG: EnvConfig = {
@@ -47,6 +51,8 @@ const DEFAULT_CONFIG: EnvConfig = {
   KLING_SECRET_KEY: "",
   VIDU_API_KEY: "",
   ARK_API_KEY: "",
+  OPENAI_KONGYANG_API_KEY: "",
+  OPENAI_GEEKNOW_API_KEY: "",
   endpoint_overrides: {},
 };
 
@@ -233,6 +239,35 @@ export default function SettingsPage() {
                 <span className="text-gray-600 font-normal text-xs">e.g. sk-xxx</span>
               </label>
               <input type="password" value={config.DASHSCOPE_API_KEY} onChange={(e) => handleChange("DASHSCOPE_API_KEY", e.target.value)} placeholder="Required for DashScope-first model routing" className={inputClass} />
+            </div>
+
+            <div className="pt-4 border-t border-white/10">
+              <h3 className="text-sm font-bold text-white mb-2">空氧 / GeekNow（LLM，可选）</h3>
+              <p className="text-[10px] text-gray-500 mb-4">
+                OpenAI 兼容对话通道。在剧集「生成设置」中将 LLM 通道选为 openai_kongyang（空氧）或 openai_geeknow 时使用；需同时填写对应 API Key，并在下方 Advanced 中填写 Base URL（或已在 .env 中配置）。
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">空氧 API Key（OPENAI_KONGYANG_API_KEY）</label>
+                  <input
+                    type="password"
+                    value={config.OPENAI_KONGYANG_API_KEY}
+                    onChange={(e) => handleChange("OPENAI_KONGYANG_API_KEY", e.target.value)}
+                    placeholder="可选，使用空氧 LLM 通道时填写"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">GeekNow API Key（OPENAI_GEEKNOW_API_KEY）</label>
+                  <input
+                    type="password"
+                    value={config.OPENAI_GEEKNOW_API_KEY}
+                    onChange={(e) => handleChange("OPENAI_GEEKNOW_API_KEY", e.target.value)}
+                    placeholder="可选，使用 GeekNow LLM 通道时填写"
+                    className={inputClass}
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="pt-4 border-t border-white/10">

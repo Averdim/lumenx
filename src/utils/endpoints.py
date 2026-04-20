@@ -5,6 +5,9 @@ PROVIDER_DEFAULTS = {
     "DASHSCOPE": "https://dashscope.aliyuncs.com",
     "KLING": "https://api-beijing.klingai.com/v1",
     "VIDU": "https://api.vidu.cn/ent/v2",
+    # OpenAI-compatible LLM gateways (see .env.example OPENAI_KONGYANG_* / OPENAI_GEEKNOW_*)
+    "OPENAI_KONGYANG": "",
+    "OPENAI_GEEKNOW": "",
 }
 
 

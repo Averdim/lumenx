@@ -150,7 +150,7 @@ export const LLM_MODELS = [
     { id: 'qwen-plus', name: 'Qwen Plus', description: 'DashScope' },
     { id: 'qwen-max', name: 'Qwen Max', description: 'DashScope' },
     { id: 'gpt-5.2-kongyang', name: 'GPT-5.2（空氧）', description: '模型 id 带 -kongyang；请求上游自动为 gpt-5.2' },
-    { id: 'gpt-5.2-geeknow', name: 'GPT-5.2（GeekNow）', description: '模型 id 带 -geeknow；请求上游自动为 gpt-5.2' },
+    { id: 'gpt-5-2-geeknow', name: 'GPT-5.2（GeekNow）', description: '模型 id 带 -geeknow；请求上游自动为 gpt-5-2' },
     { id: 'gemini2.5-flash', name: 'Gemini 2.5 Flash', description: 'Auto：gemini* → 空氧（OPENAI_KONGYANG_* 或 OPENAI_*）' },
     {
         id: 'gemini-3-flash-preview',

@@ -10,7 +10,7 @@ Prerequisites (see .env / .env.example):
 
 - Text (Kongyang / legacy OpenAI): OPENAI_KONGYANG_API_KEY or OPENAI_API_KEY, plus
   OPENAI_KONGYANG_BASE_URL or OPENAI_BASE_URL or KONGYANG_BASE_URL.
-- Text (GeekNow, gpt-5.2-geeknow only): OPENAI_GEEKNOW_API_KEY + OPENAI_GEEKNOW_BASE_URL.
+- Text (GeekNow, gpt-5-2-geeknow): OPENAI_GEEKNOW_API_KEY + OPENAI_GEEKNOW_BASE_URL.
 - Image (Gemini Flash Image, Seedream, z-image): IMAGE_OPENAI_BASE_URL (or KONGYANG_BASE_URL)
   + IMAGE_OPENAI_API_KEY.
 
@@ -120,7 +120,7 @@ def test_live_llm_gpt_5_2_geeknow_returns_text(monkeypatch):
                 "content": "Reply with exactly the two letters OK and nothing else.",
             }
         ],
-        model="gpt-5.2-geeknow",
+        model="gpt-5-2-geeknow",
     )
     assert isinstance(text, str) and text.strip(), f"Empty LLM response: {text!r}"
     assert "OK" in text.upper()

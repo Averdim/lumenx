@@ -24,14 +24,14 @@ def test_resolve_gpt_to_kongyang(monkeypatch):
 def test_resolve_gpt52_gateway_suffixes(monkeypatch):
     monkeypatch.delenv("LLM_PROVIDER", raising=False)
     assert resolve_llm_backend("gpt-5.2-kongyang") == "openai_kongyang"
-    assert resolve_llm_backend("gpt-5.2-geeknow") == "openai_geeknow"
+    assert resolve_llm_backend("gpt-5-2-geeknow") == "openai_geeknow"
 
 
 def test_strip_llm_gateway_route_suffix():
     assert strip_llm_gateway_route_suffix("gpt-5.2-kongyang") == "gpt-5.2"
-    assert strip_llm_gateway_route_suffix("gpt-5.2-geeknow") == "gpt-5.2"
+    assert strip_llm_gateway_route_suffix("gpt-5-2-geeknow") == "gpt-5-2"
     assert strip_llm_gateway_route_suffix("gpt-5.2") == "gpt-5.2"
-    assert strip_llm_gateway_route_suffix("GPT-5.2-GeekNow") == "GPT-5.2"
+    assert strip_llm_gateway_route_suffix("GPT-5-2-GeekNow") == "GPT-5-2"
 
 
 def test_resolve_gemini_to_kongyang(monkeypatch):

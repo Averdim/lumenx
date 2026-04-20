@@ -46,6 +46,10 @@ export interface EnvConfigPayload {
     VIDU_API_KEY?: string;
     /** Volcengine Ark (Doubao / SeeDance I2V) */
     ARK_API_KEY?: string;
+    /** OpenAI-compatible LLM (空氧); project llm_backend openai_kongyang */
+    OPENAI_KONGYANG_API_KEY?: string;
+    /** OpenAI-compatible LLM (GeekNow); project llm_backend openai_geeknow */
+    OPENAI_GEEKNOW_API_KEY?: string;
     endpoint_overrides?: Record<string, string>;
     [key: string]: string | Record<string, string> | undefined;
 }
